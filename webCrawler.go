@@ -10,17 +10,21 @@ import (
     "golang.org/x/net/html"
     "strings"
     "path/filepath"
+    "time"
 )
+
+var start_url *url.URL
+var visited = make(map[string]bool)
 
 func createPaths (parsed_url *url.URL) *os.File{
   var dir,file string
-  if(strings.Index(parsed_url.Path, ".") >= 0){
+  i := strings.LastIndex(parsed_url.Path, "/")
+  if(i >=0 && strings.Index(parsed_url.Path[i:], ".") >= 0){
    dir, file = filepath.Split(parsed_url.Path)
   } else {
    dir  = parsed_url.Path + "/"
    file = "index.html"
   }
-
   if(len(dir)>0){
     err := os.MkdirAll(parsed_url.Host + dir, 0777)
     if(err != nil){
@@ -36,32 +40,42 @@ func createPaths (parsed_url *url.URL) *os.File{
   return fileWriter
 }
 
-func generateLinks(resp_reader io.Reader, parsed_url *url.URL, ch chan string ) {
+//Converts relative links to absolute links
+
+func fixUrl(href string, baseUrl *url.URL) (string, string) {
+    link, err := url.Parse(href)
+    if err!= nil{
+        fmt.Println("Parsing relative link Error: ", err)
+        return "", "" //ignoring invalid urls
+    }
+    uri := baseUrl.ResolveReference(link)
+    return uri.String(), uri.Host
+}
+
+func generateLinks(resp_reader io.Reader, ch chan string, uri *url.URL) {
   z := html.NewTokenizer(resp_reader)
   countLinks := 0
   for{
       tt := z.Next();
       switch{
           case tt==html.ErrorToken:
-              if countLinks == 0 {
-                
-              }
-              fmt.Println("Number of links found: ", countLinks)
+              fmt.Println("Number of links: ", countLinks)
               return
           case tt==html.StartTagToken:
               t := z.Token()
 
               if t.Data == "a"{
                   for _, a := range t.Attr{
-                      if a.Key == "href"{
-                          link, err := url.Parse(a.Val)
-                          if err != nil {
-                            fmt.Println("Url Parsing Error: ",err)
-                            os.Exit(1)
-                          }
-                          if link.Host == parsed_url.Host{
-                            countLinks++
-                            ch <- a.Val
+                      if a.Key == "href" && !strings.Contains(a.Val, "#"){
+                          link, link_host := fixUrl(a.Val, uri)
+                          if link != "" {
+                            if link_host == start_url.Host{
+                              link = strings.TrimSuffix(link, "/")
+                              if !visited[link] {
+                                countLinks++
+                                ch <- link
+                              }
+                            }
                           }
                       }
 
@@ -74,21 +88,24 @@ func generateLinks(resp_reader io.Reader, parsed_url *url.URL, ch chan string ) 
 
 func retrieve(uri string, ch chan string){
     parsed_url, err := url.Parse(uri)
-    if(err != nil){
-      fmt.Println("Url Parsing Error: ",err)
-      os.Exit(1)
+    if err!= nil{
+        fmt.Println("Parsing link Error: ", err)
+        os.Exit(1)
     }
+    fmt.Println("Fetching:  ", uri)
+    visited[uri] = true
     resp, err := http.Get(uri)
 
     if(err != nil){
-        fmt.Println("Http Transport Error: ",err)
-        os.Exit(1)
+        fmt.Println("Http Transport Error: ", uri, "     ", err)
+        return
     }
+    defer resp.Body.Close()
+
     fileWriter := createPaths(parsed_url)
     resp_reader := io.TeeReader(resp.Body, fileWriter)
     defer fileWriter.Close()
-    generateLinks(resp_reader, parsed_url, ch)
-
+    generateLinks(resp_reader, ch, parsed_url)
 }
 
 func main(){
@@ -99,9 +116,19 @@ func main(){
         fmt.Println("Specify a start page")
         os.Exit(1)
      }
+     var err error
+     start_url, err = url.Parse(args[0])
+     if err!= nil{
+         fmt.Println("Parsing Start Url Error: ",err)
+         os.Exit(1)
+     }
+     args[0] = strings.TrimSuffix(args[0], "/")
      ch := make(chan string, 10)
      ch <- args[0]
      for uri := range ch{
-       go retrieve(uri, ch)
+       time.Sleep(100 * time.Millisecond)
+       if !visited[uri]{
+         go retrieve(uri, ch)
+       }
      }
 }
