@@ -10,11 +10,12 @@ import (
     "golang.org/x/net/html"
     "strings"
     "path/filepath"
-    "time"
+    //"time"
 )
 
 var start_url *url.URL
 var visited = make(map[string]bool)
+var goCount = 0
 
 func createPaths (parsed_url *url.URL) *os.File{
   var dir,file string
@@ -52,7 +53,7 @@ func fixUrl(href string, baseUrl *url.URL) (string, string) {
     return uri.String(), uri.Host
 }
 
-func generateLinks(resp_reader io.Reader, ch chan string, uri *url.URL) {
+func generateLinks(resp_reader io.Reader,  uri *url.URL) {
   z := html.NewTokenizer(resp_reader)
   countLinks := 0
   for{
@@ -71,29 +72,34 @@ func generateLinks(resp_reader io.Reader, ch chan string, uri *url.URL) {
                           if link != "" {
                             if link_host == start_url.Host{
                               link = strings.TrimSuffix(link, "/")
-                              if !visited[link] {
+                              _, ok := visited[link]
+                              if !ok {
                                 countLinks++
-                                ch <- link
+                                visited[link] = false
                               }
                             }
                           }
                       }
-
                   }
-
               }
         }
     }
 }
 
-func retrieve(uri string, ch chan string){
+func retrieveDone(syncChan chan int) {
+    <-syncChan
+    goCount--
+}
+
+func retrieve(uri string, syncChan chan int){
+    defer retrieveDone(syncChan)
+
     parsed_url, err := url.Parse(uri)
     if err!= nil{
         fmt.Println("Parsing link Error: ", err)
         os.Exit(1)
     }
     fmt.Println("Fetching:  ", uri)
-    visited[uri] = true
     resp, err := http.Get(uri)
 
     if(err != nil){
@@ -105,7 +111,8 @@ func retrieve(uri string, ch chan string){
     fileWriter := createPaths(parsed_url)
     resp_reader := io.TeeReader(resp.Body, fileWriter)
     defer fileWriter.Close()
-    generateLinks(resp_reader, ch, parsed_url)
+
+    generateLinks(resp_reader, parsed_url)
 }
 
 func main(){
@@ -123,12 +130,23 @@ func main(){
          os.Exit(1)
      }
      args[0] = strings.TrimSuffix(args[0], "/")
-     ch := make(chan string, 10)
-     ch <- args[0]
-     for uri := range ch{
-       time.Sleep(100 * time.Millisecond)
-       if !visited[uri]{
-         go retrieve(uri, ch)
-       }
+     syncChan:= make(chan int, 10)
+     visited[args[0]] = false
+     for {
+        allVisited := true
+        for uri, done := range visited {
+            if done == true {
+                continue
+            }
+            syncChan <- 1
+            visited[uri] = true
+            goCount++
+            go retrieve(uri, syncChan)
+            allVisited = false
+            break
+        }
+        if allVisited == true && goCount == 0 {
+            break;
+        }
      }
 }

@@ -1,0 +1,1932 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+    <channel>
+        <title><![CDATA[ Gregory Schier ]]></title>
+        <description><![CDATA[ Feed of my recent posts ]]></description>
+        <link>http://admin.schier.co</link>
+        <image>
+            <url>http://admin.schier.co/favicon.ico</url>
+            <title>Gregory Schier</title>
+            <link>http://admin.schier.co</link>
+        </image>
+        <generator>Balloon</generator>
+        <lastBuildDate> PST</lastBuildDate>
+        <atom:link href="http://schier.co/rss.xml" rel="self" type="application/rss+xml"/>
+        <author><![CDATA[ Gregory Schier ]]></author>
+        
+
+
+
+
+
+<item>
+    <title><![CDATA[ Generators in Go ]]></title>
+    <description><![CDATA[ <p>While Go does not have an official construct for generators, it is possible to
+use channels to achieve the same effect. Below is a function called <code>count</code> that
+generates numbers from <code>0</code> to <code>n</code>.</p>
+<pre><code class="lang-Go"><div class="highlight"><pre><span class="c1">//~~~~~~~~~~~~~~~~~~~~~~~~~~~~//</span>
+<span class="c1">// Generator that counts to n //</span>
+<span class="c1">//~~~~~~~~~~~~~~~~~~~~~~~~~~~~//</span>
+
+<span class="kd">func</span> <span class="nx">count</span><span class="p">(</span><span class="nx">n</span> <span class="kt">int</span><span class="p">)</span> <span class="p">(</span><span class="kd">chan</span> <span class="kt">int</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">ch</span> <span class="o">:=</span> <span class="nb">make</span><span class="p">(</span><span class="kd">chan</span> <span class="kt">int</span><span class="p">)</span>
+
+    <span class="k">go</span> <span class="kd">func</span> <span class="p">()</span> <span class="p">{</span>
+        <span class="k">for</span> <span class="nx">i</span> <span class="o">:=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="p">&lt;</span> <span class="nx">n</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span>
+            <span class="nx">ch</span> <span class="o">&lt;-</span> <span class="nx">i</span>
+        <span class="p">}</span>
+        <span class="nb">close</span><span class="p">(</span><span class="nx">ch</span><span class="p">)</span>
+    <span class="p">}()</span>
+
+    <span class="k">return</span> <span class="nx">ch</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="nx">i</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">count</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;Counted&quot;</span><span class="p">,</span> <span class="nx">i</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+
+</code></pre>
+<p>As you can see, our <code>main</code> function can now use <code>count</code> like a generator without
+needing to handle channel creation.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2015/04/27/generators-in-go.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2015/04/27/generators-in-go.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Monday, 27 Apr 2015 07:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ A Simple Web Scraper in Go ]]></title>
+    <description><![CDATA[ <p>In my day job at <a href="https://www.sendwithus.com">Sendwithus</a>, we&#39;ve been having
+trouble writing performant concurrent systems in Python. We&#39;ve come to the
+conclusion that Python just isn&#39;t suitable for some of our high throughput
+tasks, so we&#39;ve started playing around with <a href="https://golang.org/">Go</a> as a
+potential replacement.</p>
+<p>After making it all the way through the
+<a href="http://tour.golang.org">Golang Interactive Tour</a>, which I highly
+recommend doing if you haven&#39;t yet, I wanted to build something real. The last
+task in the Go tour is to build a concurrent web crawler, but it faked the fun
+parts like making HTTP requests and parsing HTML. It was this that motivated me
+to close the tutorial and write a real web scraper. This post is going to show
+you how to build it.</p>
+<p>There are three main things that we&#39;ll be covering:</p>
+<ul>
+<li>using the <code>net/http</code> package to fetch a web page</li>
+<li>using the <code>golang.org/x/net/html</code> to parse an HTML document</li>
+<li>using Go concurrency with multi-channel communication </li>
+</ul>
+<p>In order to keep this tutorial from being too long, I won&#39;t be
+accommodating those of you that haven&#39;t yet made it through the
+<a href="http://tour.golang.org">Go Tour</a>. The tour should teach you everything you
+need to know to follow along.</p>
+<h2 id="what-we-ll-be-building">What We&#39;ll Be Building</h2>
+<p>As I mentioned in the introduction, we&#39;ll be going over how to build a simple web
+scraper in Go. Note that I didn&#39;t say <em>web crawler</em> because our scraper will
+only be going one level deep (maybe I&#39;ll cover crawling in another post).</p>
+<p>To give you a brief description, we&#39;re going to be building a basic command line
+tool that takes a list of starting URLs as input and prints all the links that 
+it finds on those pages.</p>
+<p>Here&#39;s an example of it in action:</p>
+<pre><code class="lang-text"><div class="highlight"><pre>$ go run main.go http://schier.co https://google.com                  
+
+Found 18 unique urls:
+
+ - https://plus.google.com/102509209246537377732?rel=author
+ - http://www.linkedin.com/profile/view?id=180332858
+ - https://github.com/gschier
+ - https://www.sendwithus.com
+ - https://twitter.com/gregoryschier
+ ...
+</pre></div>
+
+</code></pre>
+<p>Now that you know what we&#39;re building, let&#39;s get to the fun part.</p>
+<h2 id="breaking-it-down">Breaking it Down</h2>
+<p>To make this tutorial easier to digest, I&#39;ll be breaking it down isolated
+components. After going over each component, I&#39;ll put them all together to form
+the final product. The first component we&#39;ll be going over is making an HTTP
+request to fetch some HTML.</p>
+<h3 id="fetching-a-web-page-by-url">Fetching a Web Page by URL</h3>
+<p>Making HTTP requests in Go is easy. The
+<a href="http://golang.org/pkg/net/http/">http</a> package provides a simple way of doing
+this in just a couple lines of code.</p>
+<p><em>Note that things like error handling are omitted to keep this example short.</em></p>
+<pre><code class="lang-go"><div class="highlight"><pre><span class="c1">//~~~~~~~~~~~~~~~~~~~~~~//</span>
+<span class="c1">// Make an HTTP request //</span>
+<span class="c1">//~~~~~~~~~~~~~~~~~~~~~~//</span>
+
+<span class="nx">resp</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Get</span><span class="p">(</span><span class="nx">url</span><span class="p">)</span>
+<span class="nx">bytes</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">ioutil</span><span class="p">.</span><span class="nx">ReadAll</span><span class="p">(</span><span class="nx">resp</span><span class="p">.</span><span class="nx">Body</span><span class="p">)</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;HTML:\n\n&quot;</span><span class="p">,</span> <span class="nb">string</span><span class="p">(</span><span class="nx">bytes</span><span class="p">))</span>
+
+<span class="nx">resp</span><span class="p">.</span><span class="nx">Body</span><span class="p">.</span><span class="nx">Close</span><span class="p">()</span>
+</pre></div>
+
+</code></pre>
+<p>Making an HTTP request is the foundation of our web scraper. Now that we
+know how to do that, we can dig into parsing the HTML to extract links.</p>
+<h3 id="finding-links-in-html">Finding Links in HTML</h3>
+<p>Go doesn&#39;t have a core package for parsing HTML, but there is a package provided
+in the
+<a href="https://code.google.com/p/go-wiki/wiki/SubRepositories">Golang SubRepositores</a>
+that we can use by importing <code>golang.org/x/net/html</code>.</p>
+<p>If you&#39;ve never interacted with an XML or HTML tokenizer before, this may take
+some time to grasp, but it&#39;s really not that difficult. The tokenizer splits
+the HTML document into tokens that can be iterated over. Here are the possible
+things that a token can represent
+(<a href="https://godoc.org/golang.org/x/net/html#TokenType">documentation</a>):</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Token Name</th>
+<th style="text-align:left">Token Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>ErrorToken</code></td>
+<td style="text-align:left">error during tokenization (or end of document)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>TextToken</code></td>
+<td style="text-align:left">text node (contents of an element)</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>StartTagToken</code></td>
+<td style="text-align:left">example <code>&lt;a&gt;</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>EndTagToken</code></td>
+<td style="text-align:left">example <code>&lt;/a&gt;</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>SelfClosingTagToken</code></td>
+<td style="text-align:left">example <code>&lt;br/&gt;</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>CommentToken</code></td>
+<td style="text-align:left">example <code>&lt;!-- Hello World --&gt;</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DoctypeToken</code></td>
+<td style="text-align:left">example <code>&lt;!DOCTYPE html&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<p>For our case, we are looking for URLs, which will be found inside opening <code>&lt;a&gt;</code>
+tags. The code below demonstrates how to find all the opening anchor tags in an
+HTML document.</p>
+<pre><code class="lang-go"><div class="highlight"><pre><span class="c1">//~~~~~~~~~~~~~~~~~~~~~~~~~~~~//</span>
+<span class="c1">// Parse HTML for Anchor Tags //</span>
+<span class="c1">//~~~~~~~~~~~~~~~~~~~~~~~~~~~~//</span>
+
+<span class="nx">z</span> <span class="o">:=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">NewTokenizer</span><span class="p">(</span><span class="nx">response</span><span class="p">.</span><span class="nx">Body</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="p">{</span>
+    <span class="nx">tt</span> <span class="o">:=</span> <span class="nx">z</span><span class="p">.</span><span class="nx">Next</span><span class="p">()</span>
+
+    <span class="k">switch</span> <span class="p">{</span>
+    <span class="k">case</span> <span class="nx">tt</span> <span class="o">==</span> <span class="nx">html</span><span class="p">.</span><span class="nx">ErrorToken</span><span class="p">:</span>
+        <span class="c1">// End of the document, we&#39;re done</span>
+        <span class="k">return</span>
+    <span class="k">case</span> <span class="nx">tt</span> <span class="o">==</span> <span class="nx">html</span><span class="p">.</span><span class="nx">StartTagToken</span><span class="p">:</span>
+        <span class="nx">t</span> <span class="o">:=</span> <span class="nx">z</span><span class="p">.</span><span class="nx">Token</span><span class="p">()</span>
+
+        <span class="nx">isAnchor</span> <span class="o">:=</span> <span class="nx">t</span><span class="p">.</span><span class="nx">Data</span> <span class="o">==</span> <span class="s">&quot;a&quot;</span>
+        <span class="k">if</span> <span class="nx">isAnchor</span> <span class="p">{</span>
+            <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;We found a link!&quot;</span><span class="p">)</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+
+</code></pre>
+<p>Now that we have found the anchor tags, how do we get the <code>href</code> value?
+Unfortunately, it&#39;s not as easy as you would expect. A token stores it&#39;s 
+attributes in an array, so the only way to get the <code>href</code> is to iterate over
+every attribute until we find it. Here&#39;s the code to do it.</p>
+<pre><code class="lang-go"><div class="highlight"><pre><span class="c1">//~~~~~~~~~~~~~~~~~~~//</span>
+<span class="c1">// Get Tag Attribute //</span>
+<span class="c1">//~~~~~~~~~~~~~~~~~~~//</span>
+
+<span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">a</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">t</span><span class="p">.</span><span class="nx">Attr</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">a</span><span class="p">.</span><span class="nx">Key</span> <span class="o">==</span> <span class="s">&quot;href&quot;</span> <span class="p">{</span>
+        <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;Found href:&quot;</span><span class="p">,</span> <span class="nx">a</span><span class="p">.</span><span class="nx">Val</span><span class="p">)</span>
+        <span class="k">break</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+
+</code></pre>
+<p>At this point we know how to fetch HTML using an HTTP request, as well as
+extract the links from that HTML document. So what&#39;s next? Well, we need to put
+it all together.</p>
+<p>In order to make our scraper performant, and to make this tutorial a bit more
+advanced, we&#39;ll be making use of goroutines and channels.</p>
+<h3 id="goroutines-with-multiple-channels">Goroutines with Multiple Channels</h3>
+<p>Possibly the trickiest part of this scraper is how it uses channels. In 
+order for the scraper to run quickly, it needs to fetch all URLs 
+concurrently. If concurrency is used, total execution time should equal the
+time taken to fetch the slowest request. Without concurrency
+(synchronous requests), execution time would equal the sum of all request times
+(BAD!). So how do we do this? </p>
+<p>The approach I&#39;ve taken is to kick off one goroutine per request, having
+each goroutine publish the URLs it finds to a shared channel. There&#39;s one
+problem with this though. How do we know when to close the channel? We need some
+way of knowing when the last URL has been published. We can use a second channel
+for this.</p>
+<p>The second channel is simply a notification channel. After a goroutine has
+published all of it&#39;s URLs into the main channel, it publishes a <em>done</em> message
+to the notification channel. The main thread subscribes to the notification
+channel and closes the program after all goroutines have notified that they are
+finished. This will make much more sense when you see the finished code.</p>
+<h2 id="putting-it-all-together">Putting it All Together</h2>
+<p>If you&#39;ve made it this far, you should know everything you need in order to
+comprehend the full program. I&#39;ve also added a few comments to help explain
+some of the more complicated parts.</p>
+<pre><code class="lang-go"><div class="highlight"><pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&quot;fmt&quot;</span>
+    <span class="s">&quot;golang.org/x/net/html&quot;</span>
+    <span class="s">&quot;net/http&quot;</span>
+    <span class="s">&quot;os&quot;</span>
+    <span class="s">&quot;strings&quot;</span>
+<span class="p">)</span>
+
+<span class="c1">// Helper function to pull the href attribute from a Token</span>
+<span class="kd">func</span> <span class="nx">getHref</span><span class="p">(</span><span class="nx">t</span> <span class="nx">html</span><span class="p">.</span><span class="nx">Token</span><span class="p">)</span> <span class="p">(</span><span class="nx">ok</span> <span class="kt">bool</span><span class="p">,</span> <span class="nx">href</span> <span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Iterate over all of the Token&#39;s attributes until we find an &quot;href&quot;</span>
+    <span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">a</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">t</span><span class="p">.</span><span class="nx">Attr</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="nx">a</span><span class="p">.</span><span class="nx">Key</span> <span class="o">==</span> <span class="s">&quot;href&quot;</span> <span class="p">{</span>
+            <span class="nx">href</span> <span class="p">=</span> <span class="nx">a</span><span class="p">.</span><span class="nx">Val</span>
+            <span class="nx">ok</span> <span class="p">=</span> <span class="kc">true</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// &quot;bare&quot; return will return the variables (ok, href) as defined in</span>
+    <span class="c1">// the function definition</span>
+    <span class="k">return</span>
+<span class="p">}</span>
+
+<span class="c1">// Extract all http** links from a given webpage</span>
+<span class="kd">func</span> <span class="nx">crawl</span><span class="p">(</span><span class="nx">url</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">ch</span> <span class="kd">chan</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">chFinished</span> <span class="kd">chan</span> <span class="kt">bool</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">resp</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Get</span><span class="p">(</span><span class="nx">url</span><span class="p">)</span>
+
+    <span class="k">defer</span> <span class="kd">func</span><span class="p">()</span> <span class="p">{</span>
+        <span class="c1">// Notify that we&#39;re done after this function</span>
+        <span class="nx">chFinished</span> <span class="o">&lt;-</span> <span class="kc">true</span>
+    <span class="p">}()</span>
+
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;ERROR: Failed to crawl \&quot;&quot;</span> <span class="o">+</span> <span class="nx">url</span> <span class="o">+</span> <span class="s">&quot;\&quot;&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">b</span> <span class="o">:=</span> <span class="nx">resp</span><span class="p">.</span><span class="nx">Body</span>
+    <span class="k">defer</span> <span class="nx">b</span><span class="p">.</span><span class="nx">Close</span><span class="p">()</span> <span class="c1">// close Body when the function returns</span>
+
+    <span class="nx">z</span> <span class="o">:=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">NewTokenizer</span><span class="p">(</span><span class="nx">b</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="p">{</span>
+        <span class="nx">tt</span> <span class="o">:=</span> <span class="nx">z</span><span class="p">.</span><span class="nx">Next</span><span class="p">()</span>
+
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">tt</span> <span class="o">==</span> <span class="nx">html</span><span class="p">.</span><span class="nx">ErrorToken</span><span class="p">:</span>
+            <span class="c1">// End of the document, we&#39;re done</span>
+            <span class="k">return</span>
+        <span class="k">case</span> <span class="nx">tt</span> <span class="o">==</span> <span class="nx">html</span><span class="p">.</span><span class="nx">StartTagToken</span><span class="p">:</span>
+            <span class="nx">t</span> <span class="o">:=</span> <span class="nx">z</span><span class="p">.</span><span class="nx">Token</span><span class="p">()</span>
+
+            <span class="c1">// Check if the token is an &lt;a&gt; tag</span>
+            <span class="nx">isAnchor</span> <span class="o">:=</span> <span class="nx">t</span><span class="p">.</span><span class="nx">Data</span> <span class="o">==</span> <span class="s">&quot;a&quot;</span>
+            <span class="k">if</span> <span class="p">!</span><span class="nx">isAnchor</span> <span class="p">{</span>
+                <span class="k">continue</span>
+            <span class="p">}</span>
+
+            <span class="c1">// Extract the href value, if there is one</span>
+            <span class="nx">ok</span><span class="p">,</span> <span class="nx">url</span> <span class="o">:=</span> <span class="nx">getHref</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span>
+            <span class="k">if</span> <span class="p">!</span><span class="nx">ok</span> <span class="p">{</span>
+                <span class="k">continue</span>
+            <span class="p">}</span>
+
+            <span class="c1">// Make sure the url begines in http**</span>
+            <span class="nx">hasProto</span> <span class="o">:=</span> <span class="nx">strings</span><span class="p">.</span><span class="nx">Index</span><span class="p">(</span><span class="nx">url</span><span class="p">,</span> <span class="s">&quot;http&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="nx">hasProto</span> <span class="p">{</span>
+                <span class="nx">ch</span> <span class="o">&lt;-</span> <span class="nx">url</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nx">foundUrls</span> <span class="o">:=</span> <span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">bool</span><span class="p">)</span>
+    <span class="nx">seedUrls</span> <span class="o">:=</span> <span class="nx">os</span><span class="p">.</span><span class="nx">Args</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+
+    <span class="c1">// Channels</span>
+    <span class="nx">chUrls</span> <span class="o">:=</span> <span class="nb">make</span><span class="p">(</span><span class="kd">chan</span> <span class="kt">string</span><span class="p">)</span>
+    <span class="nx">chFinished</span> <span class="o">:=</span> <span class="nb">make</span><span class="p">(</span><span class="kd">chan</span> <span class="kt">bool</span><span class="p">)</span> 
+
+    <span class="c1">// Kick off the crawl process (concurrently)</span>
+    <span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">url</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">seedUrls</span> <span class="p">{</span>
+        <span class="k">go</span> <span class="nx">crawl</span><span class="p">(</span><span class="nx">url</span><span class="p">,</span> <span class="nx">chUrls</span><span class="p">,</span> <span class="nx">chFinished</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Subscribe to both channels</span>
+    <span class="k">for</span> <span class="nx">c</span> <span class="o">:=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">c</span> <span class="p">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="nx">seedUrls</span><span class="p">);</span> <span class="p">{</span>
+        <span class="k">select</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">url</span> <span class="o">:=</span> <span class="o">&lt;-</span><span class="nx">chUrls</span><span class="p">:</span>
+            <span class="nx">foundUrls</span><span class="p">[</span><span class="nx">url</span><span class="p">]</span> <span class="p">=</span> <span class="kc">true</span>
+        <span class="k">case</span> <span class="o">&lt;-</span><span class="nx">chFinished</span><span class="p">:</span>
+            <span class="nx">c</span><span class="o">++</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// We&#39;re done! Print the results...</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;\nFound&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="nx">foundUrls</span><span class="p">),</span> <span class="s">&quot;unique urls:\n&quot;</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="nx">url</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">foundUrls</span> <span class="p">{</span>
+        <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot; - &quot;</span> <span class="o">+</span> <span class="nx">url</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="nb">close</span><span class="p">(</span><span class="nx">chUrls</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></div>
+
+</code></pre>
+<h2 id="wrap-up">Wrap Up</h2>
+<p>That wraps up the tutorial of a Go web scraper CLI. We&#39;ve covered making HTTP
+requests, parsing HTML, and even some slightly complicated concurrency patterns.</p>
+<p>I hope it was simple  enough for you to follow along and maybe even learn a few
+things. I&#39;ll probably be doing a few more of these posts as I learn more about
+Go so make sure you subscribe, either via email (bottom of page) or
+<a href="http://schier.co/rss.xml">RSS</a>.</p>
+<p>As always, thanks for reading! :)</p>
+ ]]></description>
+    <link>http://schier.co/blog/2015/04/26/a-simple-web-scraper-in-go.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2015/04/26/a-simple-web-scraper-in-go.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Sunday, 26 Apr 2015 07:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Build a Blog Email Subscription Service using Zapier and Sendwithus ]]></title>
+    <description><![CDATA[ <p>There are many different ways to get notified of new posts for you favourite
+blogs. For example, you could subscribe via RSS or follow a Twitter account
+(if there is one). There is also the good ol&#39; fashioned way – email
+subscriptions. </p>
+<p>I wanted to add email subscription notifications to <em>my</em> blog (the thing you&#39;re
+reading) but didn&#39;t want it to be a manual process email every time I published 
+something new. So, I thought a little bit and realized I could combine a couple
+services (<a href="https://zapier.com">Zapier</a> and
+<a href="https://www.sendwithus.com/">Sendwithus</a>) to come up with something automated.
+This post is going to outline the steps needed to build an email notification
+system without writing a single line of code.</p>
+<p><em>I should point out that I am a developer at Sendwithus, but it really doesn&#39;t
+matter. These instructions can be modified to work with almost any email tool.</em></p>
+<h2 id="the-requirements">The Requirements</h2>
+<p>What does our email subscription service need to do? This is what I asked myself
+before starting. Well, there are just a few basic requirements.</p>
+<ul>
+<li>should be able to send an email to a list of subscribers</li>
+<li>should send the emails automatically when a new post goes live</li>
+<li>email content should be dynamically generated based on the new blog post</li>
+</ul>
+<p>Each one of these requirements is non-trivial. Building something from 
+scratch to satisfy these would take a lot of time and on require ongoing
+maintenance. Let&#39;s not waist our time. That&#39;s where our tools come in.</p>
+<h2 id="introducing-the-tools">Introducing the Tools</h2>
+<p>Now that we know what our email service needs to do, how do we build it?
+There are two tools that work espicially well together that we&#39;re going to use
+to solve this problem: <a href="https://zapier.com">Zapier</a> and
+<a href="https://www.sendwithus.com/">Sendwithus</a>. </p>
+<h3 id="zapier">Zapier</h3>
+<p>Zapier is a service that makes it really easy to link together different web
+services. The main feature Zapier is the ability create what they call a Zap.
+A Zap consists of two parts. A source event and an action. Once the Zap is
+created, whenever Zapier sees the source event happen it will trigger the
+action. This is a pretty hand-wavy explanation so I put together some examples
+to help you understand.</p>
+<ul>
+<li>when I post a new tweet, text that tweet to my mom using
+<a href="http://twilio.com/">Twilio</a></li>
+<li>when a new issue is created in <a href="https://github.com/">Github</a>, also create a
+task in <a href="https://trello.com/">Trello</a></li>
+<li>when a phone number recieves an SMS (Twilio), unlock my door using 
+<a href="https://lockitron.com/">Lockitron</a></li>
+</ul>
+<p>You get the picture. You can pretty much do anything you want, including...</p>
+<ul>
+<li>when an RSS feed updates, send an email to my blog subscribers using
+<a href="https://www.sendwithus.com/">Sendwithus</a></li>
+</ul>
+<p>Amazing right? <strong>That&#39;s exactly what we want!</strong></p>
+<p>Now that we know a bit about Zapier, lets talk a bit about Sendwithus.</p>
+<h3 id="sendwithus">Sendwithus</h3>
+<p>Sendwithus, to put is simply, is a hosted API platform for sending templated
+email. What does this mean? It means that you can programmatically send highly
+dynamic and personalized email using any programming language you want.</p>
+<p>Here are the core Sendwithus features we&#39;ll be using:</p>
+<ul>
+<li>premade responsive email starter templates</li>
+<li>HTML email templating with <a href="http://jinja.pocoo.org/docs/dev/">Jinja2</a></li>
+<li>sending email to a customer segment</li>
+</ul>
+<p>These three things combined are all we need to get this working. Now that we&#39;ve
+introduced the tech we&#39;ll be using, let&#39;s get started on the real work.</p>
+<h2 id="step-1-create-a-zap">Step 1 – Create a Zap</h2>
+<p>We&#39;re going to skip the easy stuff like registering accounts for Sendwithus and
+Zapier. I trust you&#39;re smart enough to figure those out on you&#39;re own. So,
+we&#39;ll just dive right in and create our first Zap.</p>
+<p>On the &quot;Make a New Zap&quot; page, there are two dropdowns. We&#39;re going to select
+our event source (RSS) from the first one, and our action (Sendwithus) in the
+second. If you haven&#39;t yet connected your Sendwithus account to Zapier,
+Zapier will prompt you to put in your API key, but that&#39;s all you need to get
+going.</p>
+<p>After selecting Sendwithus, choose the &quot;Send to Segment&quot; action from the
+dropdown as the picture below shows. A segment in Sendwithus is basically a
+dynamic customer list, defined by one or many rules. The rule that defines my
+blog subscribes segment is <code>have property &quot;confirmed&quot; equals &quot;YES&quot;</code>. This
+tutorial won&#39;t be showing you how to get customers into Sendwithus but, if you&#39;re
+interested, let me know on <a href="https://twitter.com/gregoryschier">Twitter</a> and I&#39;ll
+consider that for a future post.</p>
+<p><a href="/images/blog_updates_swu/step1.png" alt="zapier with sendwithus" target="_blank">
+    <img src="/images/blog_updates_swu/step1.png" title="zapier with sendwithus" />
+</a></p>
+<h2 id="step-2-3-connect-a-sendwithus-account">Step 2, 3 – Connect a Sendwithus Account</h2>
+<p>This step is where we configure our accounts. We simply select the Sendwithus
+account that we connected to Zapier and leave the RSS account alone (RSS doesn&#39;t
+have accounts).</p>
+<p>After selecting your Sendwithus account, Zapier will make an authentication call
+to ensure that everything is configured correctly.</p>
+<p><a href="/images/blog_updates_swu/step2.png" alt="zapier with sendwithus rss" target="_blank">
+    <img src="/images/blog_updates_swu/step2.png" title="zapier with sendwithus rss" />
+</a></p>
+<h2 id="step-4-select-an-rss-feed">Step 4 – Select an RSS Feed</h2>
+<p>This is where the we start seeing the magic. Zapier&#39;s RSS integration is pretty
+advanced but, for our purposes, we&#39;ll only be using the basic settings. Simply
+copy and paste the URL of your RSS feed into the first input box and we&#39;re done.</p>
+<p>If you want to get  really advanced, you can do cool stuff like only trigger
+this Zap when the new RSS item matches a specific filter (COOL!).</p>
+<p><a href="/images/blog_updates_swu/step3.png" alt="zapier with sendwithus rss" target="_blank">
+    <img src="/images/blog_updates_swu/step3.png" title="zapier with sendwithus rss" />
+</a></p>
+<h2 id="step-4-configure-the-action">Step 4 – Configure the Action</h2>
+<p>The next thing we need to do is set up our Sendwithus action. At this point,
+I have already created a new email template inside Sendwithus. All I did was
+modify one of the stock templates to change some colors and add some templating.
+We&#39;ll get to that in a second.</p>
+<p>So, to configure the action, we need to set a few things. The first one is the
+email template that we want to send. So, select the one that you&#39;ve created from
+the dropdown. Next, we need to select the customer segment that we want to send
+to. This is the segment that I mentioned earlier (remember?).</p>
+<p>Now that we&#39;ve done that, we need to define the dynamic data that will be passed
+to Sendwithus to render the email. The image below shows the three variables
+we&#39;ll be pulling out of the RSS feed item (url, title, description).</p>
+<p><a href="/images/blog_updates_swu/step4.png" alt="zapier with sendwithus rss" target="_blank">
+    <img src="/images/blog_updates_swu/step4.png" title="zapier with sendwithus rss" />
+</a></p>
+<p>What is this doing exactly? Once the Zap is live, Zapier will start watching the
+RSS feed. Once Zapier detects that a new item has been added, it will pull the
+variables we want out of the feed item. Once Zapier has these, it will pass the
+data to Sendwithus in an API call. Once Sendwithus receives this API call, it
+will render the email template with the given data, and deliver it to the
+customer segment.</p>
+<p>We can reference the given variables from within our Sendwithus template using
+the Jinja2 template language. Here&#39;s an example of an extremely basic email
+template.</p>
+<pre><code class="lang-html"><div class="highlight"><pre><span class="nt">&lt;html&gt;</span>
+    <span class="nt">&lt;head&gt;&lt;/head&gt;</span>
+    <span class="nt">&lt;body&gt;</span>
+        <span class="c">&lt;!-- Title of the RSS feed item --&gt;</span>
+        <span class="nt">&lt;h1&gt;</span>{{ title }}<span class="nt">&lt;/h1&gt;</span>
+
+        <span class="c">&lt;!-- First 130 characters of the RSS feed content --&gt;</span>
+        <span class="nt">&lt;p&gt;</span>{{ description | truncate(130, end=&quot;...&quot;) }}<span class="nt">&lt;/p&gt;</span>
+
+        <span class="c">&lt;!-- A link to read the post --&gt;</span>
+        <span class="nt">&lt;a</span> <span class="na">href=</span><span class="s">&quot;{{ url }}&quot;</span><span class="nt">&gt;</span>Click Here to Read<span class="nt">&lt;/a&gt;</span>
+    <span class="nt">&lt;/body&gt;</span>
+<span class="nt">&lt;/html&gt;</span>
+</pre></div>
+
+</code></pre>
+<p>While this is an extremely basic example, making a friendly and colorful email
+is not much more work. Sendwithus provides a bunch of
+<a href="https://www.sendwithus.com/resources/templates">responsive email templates</a>
+that you can modify for your needs. I modified a template from the
+<a href="https://www.sendwithus.com/resources/templates/neopolitan">Neopolitan</a> theme
+in less than ten minutes.</p>
+<p>Here&#39;s what my template looks like in the Sendwithus app.</p>
+<p><a href="/images/blog_updates_swu/swu.png" alt="zapier with sendwithus rss" target="_blank">
+    <img src="/images/blog_updates_swu/swu.png" title="zapier with sendwithus rss" />
+</a></p>
+<h2 id="step-5-test-the-zap">Step 5 – Test the Zap</h2>
+<p>Alright, now that we have everything set up, how do we know it works? 
+Fortunately, Zapier lets you test a Zap by pulling in data from the last RSS
+feed items and giving you an option to trigger them manually. This is awesome
+because you get to test your Zap with <strong>real</strong> content!</p>
+<p>Since we don&#39;t want to send a test email to our whole subscriber list, first
+make a test segment in Sendwithus that only contains a test email address.
+Use the <code>email address contains &quot;myemail@mydomain.com&quot;</code> rule to accomplish this.
+Once you&#39;ve safely tested the Zap, switch it back to the real segment.</p>
+<p><a href="/images/blog_updates_swu/step5.png" alt="zapier with sendwithus rss" target="_blank">
+    <img src="/images/blog_updates_swu/step5.png" title="zapier with sendwithus rss" />
+</a></p>
+<p>After my own testing, this is what the email looked like in my inbox
+(pun intended).</p>
+<p><a href="/images/blog_updates_swu/email.png" alt="zapier with sendwithus rss" target="_blank">
+    <img src="/images/blog_updates_swu/email.png" title="zapier with sendwithus rss" />
+</a></p>
+<h2 id="wrap-up">Wrap Up</h2>
+<p>That&#39;s it! We have built fully automated email service in about an hour with no
+programming required, thanks to Zapier and Sendwithus :)</p>
+<p>Oh, and I should also mention that these services are totally free for
+low-volume use cases like this one.</p>
+<p>As always, let me know if you have any questions or comments. Thanks for
+reading!</p>
+ ]]></description>
+    <link>http://schier.co/blog/2015/04/23/build-a-blog-email-subscription-service-using-zapier-and-sendwithus.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2015/04/23/build-a-blog-email-subscription-service-using-zapier-and-sendwithus.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Thursday, 23 Apr 2015 07:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Switching From Vim to IntelliJ ]]></title>
+    <description><![CDATA[ <p>Anyone who knows me knows how much I love Vim. I even wrote
+<a href="/blog/2014/02/07/vim-and-i-a-love-story.html">a post</a> about it. In the past
+few months, however, I&#39;ve found some things that made me start looking
+elsewhere for a great editing experience. It was time for a replacement.</p>
+<p>Recently I&#39;ve gotten back into Android development which, unfortunately,
+requires programming in Java. Anyone that has written Android code knows how
+much an IDE can do for you. Vanilla Vim just doesn&#39;t cut it. Yes,
+there are ways to make Vim behave like an IDE (<a href="http://eclim.org/">Eclim</a>),
+but none of them are amazing.</p>
+<h2 id="rediscovering-intellij-idea">Rediscovering IntelliJ IDEA</h2>
+<p>About a year ago, Google released an offical Android IDE called
+<a href="http://developer.android.com/tools/studio/index.html">Android Studio</a>, which
+is a modified version of <a href="https://www.jetbrains.com/idea/">IntelliJ IDEA</a>
+(created by Jetbrains).</p>
+<p>I really liked Android Studio when I first tried it, but the Vim plugin
+<a href="https://plugins.jetbrains.com/plugin/164">IdeaVim</a> was missing a key feature
+which prevented me from using it – key mappings. I use the
+<a href="http://colemak.com/">Colemak</a> keyboard layout, so having the ability to remap
+keys is an absolute necessity. During my search for a Vim replacement, I looked
+into IdeaVim again to see if it had gotten better. It had. In fact, it now
+supports a subset of <code>.vimrc</code> commands, including key remapping.  Hooray! This
+means that I can use the same <code>.vimrc</code> file for both Vim and Android Studio.</p>
+<p>I didn&#39;t just want to do Android development though. I needed an editor that
+supported writing code in any language. After a quick search, I found out
+that if you purchase the full version of IntelliJ, Jetbrains&#39; most expensive
+IDE, you can add the features of all of their other IDEs (PhpStorm,
+PyCharm, Webstorm, etc) by installing the necessary plugins. Amazing! That was
+enough to convince me to install the trial.</p>
+<h2 id="impressions-after-two-months">Impressions After Two Months</h2>
+<p>I&#39;m going to try and keep this post to the point, so here is a short description
+of my favorite things about IntelliJ after my first two months of use.</p>
+<h3 id="1-the-interface">1. The Interface</h3>
+<p>The thing that really sets IntelliJ apart from other IDEs, like Eclipse, is the
+interface. IntelliJ comes with an optional dark theme (called Darcula) and it&#39;s
+beautiful. Yes, it&#39;s still a Java app, but at least it looks good.</p>
+<p>Besides a pretty dark theme, IntelliJ&#39;s UI exceeds in another area – minimalism.
+If you want, you can hide every toolbar and window leaving just the editor in
+view. That&#39;s right, IntelliJ doesn&#39;t have to look gross and busy like most
+out-of-the-box IDEs. Here&#39;s a basic screenshot of me editing
+<a href="http://insomnia.rest/">Insomnia</a>, a <a href="http://facebook.github.io/react/">React</a>
+project.</p>
+<p><a href="/images/intellij/react.png" target="_blank">
+    <img src="/images/intellij/react.png" alt="IntelliJ ReactJS" style="max-width:100%"/>
+</a></p>
+<h3 id="2-search-everywhere">2. Search Everywhere</h3>
+<p><em>Search Everywhere</em> is by far my most used IntelliJ feature. It&#39;s like the
+<code>ctrl-p</code> (or <code>cmd-p</code>) shortcut of <a href="http://www.sublimetext.com/">Sublime Text</a>,
+but on steroids. As you can see in the screenshot below, this feature lets you
+search things like files, symbols, IDE actions, and even IDE settings. And,
+if a boolean setting appears in the list, IntelliJ lets you toggle it right
+from the dropdown!</p>
+<p><a href="/images/intellij/searcheverywhere.png" target="_blank">
+    <img src="/images/intellij/searcheverywhere.png" alt="IntelliJ Search Everywhere" style="max-width:100%"/>
+</a></p>
+<h3 id="3-diff-visualizer">3. Diff Visualizer</h3>
+<p>I use (and you should too) version control for every project. I used
+to use a tool on Ubuntu called Gitg to look at Git diffs, but IntelliJ actually
+does a better job.</p>
+<p><a href="/images/intellij/diffs.png" target="_blank">
+    <img src="/images/intellij/diffs.png" alt="IntelliJ Git Diff" style="max-width:100%"/>
+</a></p>
+<h3 id="4-code-editing-features">4. Code Editing Features</h3>
+<p>Here are a few features that IntelliJ offers that make writing code much easier:</p>
+<ul>
+<li>refactoring tools<ul>
+<li>rename variables</li>
+<li>change function arguments</li>
+<li>etc...</li>
+</ul>
+</li>
+<li>auto import of files and libraries</li>
+<li>go-to-definition<ul>
+<li>easily jump to the definition of a function, class, etc</li>
+<li>it even works for symbols in external libraries</li>
+</ul>
+</li>
+<li>find usages<ul>
+<li>search the codebase for all the usages of a class, function, etc</li>
+</ul>
+</li>
+<li>more than simple linting<ul>
+<li>code linting for all major languages</li>
+<li>smart analysis of function arguments, etc</li>
+<li>will tell you if a variable hasn&#39;t been defined, or function args don&#39;t
+match</li>
+</ul>
+</li>
+</ul>
+<p>This is a pretty messy list of things so it may not mean much to you, but I
+am continually impressed by small editing features like these. Something that
+impressed me most is that these features also work surprisingly well for
+less-strict languages like Python and Javascript.</p>
+<h3 id="5-plugins">5. Plugins</h3>
+<p>The plugin ecosystem of IntelliJ is awesome. As I mentioned before, the
+only reason I can use IntelliJ is because the Vim plugin is so good.</p>
+<p>Besides IdeaVim, I have installed many other plugins for things like editing
+Markdown, formatting JSON, programming language support (coffeescript, JSX,
+etc), and many other things that I&#39;m probably forgetting.</p>
+<h3 id="6-honorable-mentions">6. Honorable Mentions</h3>
+<p>Here are some other (more minor) things that are pretty cool.</p>
+<ul>
+<li>you can build your own toolbars from the ground up</li>
+<li>settings can be synced with your IntelliJ account</li>
+<li>package management is built in (Python Pip, Node NPM, etc...)</li>
+<li>built in terminal that lets you plug in whatever you want (Bash, ZSH, Fish,
+etc)</li>
+<li>diagram generation for class hierarchies or database relations</li>
+</ul>
+<h2 id="where-intellij-fails">Where IntelliJ Fails</h2>
+<p>It can&#39;t all be good right? This post has listed a large number of things I
+like about IntelliJ, but what about the things I don&#39;t like? Here&#39;s a few
+examples.</p>
+<h3 id="1-quick-file-edits">1. Quick File Edits</h3>
+<p>IntelliJ is an IDE, which means it&#39;s inherently centered around a project.
+The downside of this is that it&#39;s not good for creating one-off files that
+aren&#39;t tied to any specific project. An example of this is writing a one-off
+script, or editing system dotfiles like <code>.zshrc</code> or <code>.bash_profile</code>.</p>
+<p>IntelliJ offers support for <em>scratch files</em>, which are one-off files, but the
+ease of use of these is nowhere near that of editing a file in Vim from the
+command line.</p>
+<h3 id="2-resource-hog">2. Resource Hog</h3>
+<p>This is an obvious one. IntelliJ is a large Java application that does
+a massive amount of computation and code analysis behind the scenes. I develop
+on a Dell XPS 15, which is a top-of-the-line laptop, but every once in a while
+things freeze up for a second or two. This only seems to be a problem on
+larger-than-average projects, but it&#39;s something to keep in mind.</p>
+<p>IntelliJ does offer the ability to tune the amount of background checking it
+does, but I can never bring myself to turn any of those features off. After all,
+that&#39;s one of the largest benefits of using an IDE.</p>
+<h3 id="3-buggy-plugins-nitpick-">3. Buggy Plugins (nitpick)</h3>
+<p>This isn&#39;t really IntelliJ&#39;s fault, but a few of the plugins I&#39;ve found have
+either crashed or have interrupted my editing experience in some way.</p>
+<h3 id="4-cost">4. Cost</h3>
+<p>Elephant in the room! IntelliJ is not cheap. I don&#39;t mind paying for the tools
+that I use every day, but cost seems to be the highest barrier for everyone
+that I talk to about IntelliJ.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>So that&#39;s it. I&#39;ve been using IntelliJ for two months now and am pretty happy
+with it. I still use Vim for a few things, but since I can share the same
+<code>.vimrc</code> file between both it&#39;s easy and familiar to switch back and forth
+any time.</p>
+<p>I&#39;m definitely going to keep using IntelliJ for the foreseeable future, but I&#39;m
+sure something different will catch my interest eventually.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2015/04/19/switching-from-vim-to-intellij.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2015/04/19/switching-from-vim-to-intellij.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Sunday, 19 Apr 2015 07:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Galaxy S6 – The Bad Parts ]]></title>
+    <description><![CDATA[ <p>I purchased a Samsung Galaxy S6 on launch day (April 10) in Canada. I went for
+the black 64GB (non-edge) version on Bell Mobility. After eight days of use I&#39;m
+really liking the phone, but there are still a lot of things to complain about.</p>
+<p>I&#39;ve gotten tired of all the reviews giving the S6 such positive praise so I&#39;ve
+put together a list of ten things that I don&#39;t like about it. Here we go...</p>
+<h2 id="still-laggy">Still Laggy</h2>
+<p>Pretty much every review of the S6 that I&#39;ve read so far says there is no lag
+whatsoever. This is simply not true. Here is an <a href="http://forums.androidcentral.com/samsung-galaxy-s6-edge/509875-scrolling-lag-browser-chrome-facebook-twitter-play-store.html">Android Central
+post</a>
+that discusses the lag I&#39;ve been seeing.</p>
+<p>I&#39;ve heard that the Nexus 6 had similar lag issues before it got an upgrade to
+Android 5.1, so I&#39;m hoping the S6 sees similar improvements once Samsung ships
+a 5.1 update.</p>
+<h2 id="-heavy-scroll-momentum"><em>Heavy</em> Scroll Momentum</h2>
+<p><strong>UPDATE:</strong> After installing the first OS update, and doing a factory reset,
+this problem has pretty much went away :)</p>
+<p>This is a weird issue, and possibly subjective, but it seems like the
+touchscreen is simply too sensitive. When scrolling a page vertically, the
+content stops moving as soon as I lift my finger.</p>
+<p>This seems like a screen sensitivity issue because sometimes the content
+even starts scrolling the opposite direction after I lift off, making me
+think that it&#39;s still tracking for a short time after my finger has left the
+screen and stopped moving (or changed direction).</p>
+<p>After doing some reading, it seems like the S6 might have increased sensitivity
+enabled by default to make it work with gloves. I actually tested it with some
+wool gloves and it <em>does</em> work, so that might be the issue. On previous Galaxy
+phones, &quot;glove mode&quot; had to be enabled manually in the settings.</p>
+<p>Here&#39;s another <a href="http://forums.androidcentral.com/samsung-galaxy-s6/513633-scrolling-seem-weird.html">Android Central
+post</a>
+on the weird scrolling behavior.</p>
+<h2 id="bloatware">Bloatware</h2>
+<p>I&#39;m not sure how much of this is from Samsung and how much of it is from Bell,
+but there is a lot of shit preinstalled on this phone that cannot be uninstalled.</p>
+<p>Here&#39;s a list of non-Samsung apps that I had to disable:</p>
+<ul>
+<li>Facebook</li>
+<li>Hancom Office 2014</li>
+<li>Instagram</li>
+<li>Messenger (Facebook)</li>
+<li>OneDrive</li>
+<li>OneNote</li>
+<li>Skype</li>
+<li>WhatsApp</li>
+</ul>
+<p>Besides these, there were a large number of Samsung-made apps that I disabled
+as well.</p>
+<p>I understand that these companies probably pay Samsung (or possibly Bell) to
+preinstall these on the phone. I&#39;m fine with that. What really bothers me is
+that there is no way to uninstall them.</p>
+<h2 id="screen-ghosting">Screen Ghosting</h2>
+<p>There seems to be a very noticable tail (ghosting) when scrolling dark content.
+I know what you&#39;re thinking and the answer is no, this isn&#39;t just one of those
+things that only an extremely picky person can see. It is extremely noticeable.
+I&#39;m pretty sure this is a property of all AMOLED screens, but it&#39;s distracting
+and I wish it didn&#39;t happen.</p>
+<p>The other night I was reading a book in bed (in dark mode) and, while scrolling,
+the text just looked like a dark blur.</p>
+<h2 id="cannot-disable-shutter-sound-canada-only-">Cannot Disable Shutter Sound (Canada Only)</h2>
+<p>This one really bothers me. There is no way to turn off the shutter sound on
+the Canadian S6. The option in the settings simply isn&#39;t there. I&#39;m pretty sure
+that Canada requires a shutter sound to be on (for privacy reasons) but it sure
+makes me mad that it can&#39;t be disabled.</p>
+<p><strong>Note:</strong> Let me know if this is a problem for anyone outside Canada.</p>
+<h2 id="so-slippery">So Slippery</h2>
+<p>If you ever had a Nexus 4 then you already know how slippery a <em>glass sandwitch</em>
+phone can be. To make matters slighly worse, The S6 is larger than the Nexus 4
+which amplifies the problem. This slipperiness is especially bad when using
+the finger print sensor because it forces you to hold on to the bottom edge of
+the phone with one hand (super sketchy).</p>
+<p>I ended up buying a <a href="https://dbrand.com/shop/galaxy-s6">Dbrand
+Skin</a> which helped a lot.</p>
+<h2 id="stock-samsung-apps">Stock Samsung Apps</h2>
+<p>The default apps on Touchwiz are just awful. The clock app is a nightmare and
+the contacts app is alright, but still pretty bad. I ended up disabling and
+replacing what I could, but core apps like Clock and Contacts cannot be
+disabled.</p>
+<p><strong>UPDATE:</strong> This is a pretty subjective opinion. Coming from stock Android
+where the stock apps follow a consistent style (Material Design) and are
+extremely basic, I find the Samsung apps try to go for the
+change-for-the-sake-of-change strategy, which adds unnecessary complexity
+for the sake of trying to look flashy or pretty.</p>
+<h2 id="the-color">The Color</h2>
+<p>So basically the phone is blue, not black. Personally, I don&#39;t like the blue of
+the Galaxy S6 which is another reason I purchased a Dbrand skin.</p>
+<h2 id="battery-life">Battery Life</h2>
+<p>Like most of the reviews point out, battery life is alright, but it will never
+be a selling point of this phone. I find that the battery lasts longer than
+my 1.5 year old Nexus 5, which is good enough for me.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>So, after all this complaining, I still love the S6. Hopefully Samsung can
+fix the scrolling and lag issues with a 5.1 update, and I&#39;m sure the modding
+community will have fixes soon for a lot of my other complaints (like
+uninstalling bloat).</p>
+<p>I hope you&#39;ve learned a few things that you didn&#39;t already know from reading
+mainstream reviews. I&#39;m happy to answer any questions is you have them.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2015/04/18/galaxy-s6-the-bad-parts.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2015/04/18/galaxy-s6-the-bad-parts.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Saturday, 18 Apr 2015 07:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ How to Make Android Camera Permission Optional ]]></title>
+    <description><![CDATA[ <p>I have an Android app called <a href="https://play.google.com/store/apps/details?id=com.gregschier.toread&amp;hl=en">To Read</a>.
+To Read allows you to search for books and add them to a <em>reading list</em>. This
+weekend I added the ability to add a book by scanning a barcode.</p>
+<p>When I uploaded the finished app to the developer console, this is what I saw.</p>
+<p><img src="/images/apk_details.png" alt="Google Play APK Details"></p>
+<p><strong>336</strong> different Android devices can no longer see or install my app from the
+Play Store?! Since the camera is not required to use the basic functionality of
+the app, I wanted to make the permission optional. Here&#39;s what I did...</p>
+<h2 id="modify-androidmanifest-xml-">Modify <code>AndroidManifest.xml</code></h2>
+<p>In order for an app to use the camera, it must request the
+<code>android.permission.CAMERA</code> permission in the <code>AndroidManifest.xml</code> file.
+Adding this line (and this line only) will allow the app to use the camera
+without any problems.  However, if you <em>only</em> add this line, devices that do
+not have a camera will not be able to install the app. This is a huge problem
+if the app does not necessarily <em>need</em> the camera for core operation
+(like mine).</p>
+<p>There are a couple more things you need to add to the manifest so that the
+camera is not <em>required</em> to install the app:</p>
+<pre><code class="lang-xml"><div class="highlight"><pre><span class="c">&lt;!-- First, request the camera permission --&gt;</span>
+<span class="nt">&lt;uses-permission</span> <span class="na">android:name=</span><span class="s">&quot;android.permission.CAMERA&quot;</span> <span class="nt">/&gt;</span>
+
+<span class="c">&lt;!--</span>
+<span class="c">  -- IMPORTANT PART:</span>
+<span class="c">  -- Include all the &quot;features&quot; under the camera permission,</span>
+<span class="c">  -- and mark them all as optional.</span>
+<span class="c">  --&gt;</span>
+<span class="nt">&lt;uses-feature</span>
+    <span class="na">android:name=</span><span class="s">&quot;android.hardware.camera&quot;</span>
+    <span class="na">android:required=</span><span class="s">&quot;false&quot;</span> <span class="nt">/&gt;</span>
+<span class="nt">&lt;uses-feature</span>
+    <span class="na">android:name=</span><span class="s">&quot;android.hardware.camera.autofocus&quot;</span>
+    <span class="na">android:required=</span><span class="s">&quot;false&quot;</span> <span class="nt">/&gt;</span>
+</pre></div>
+
+</code></pre>
+<p>If you want to make the permission optional, you need to add the
+<code>&lt;uses-feature&gt;</code> tag for each of the <em>features</em> under the <code>CAMERA</code> permission.
+Within this tag, make sure to specify <code>android:required=&quot;false&quot;</code> for each
+feature. I found the child features of the <code>CAMERA</code> permission on
+<a href="http://developer.android.com/guide/topics/manifest/uses-feature-element.html">this page</a>
+(<em>image below</em>).</p>
+<p><img src="/images/camera_permission.png" alt="Google Play Camera Permission"></p>
+<p>Now that the use of the camera is optional, the other thing that needs to be
+done is check at runtime whether or not the device has a camera. You can use
+the following snippet of code to do that.</p>
+<pre><code class="lang-java"><div class="highlight"><pre><span class="c1">// Check that the device will let you use the camera</span>
+<span class="n">PackageManager</span> <span class="n">pm</span> <span class="o">=</span> <span class="n">getPackageManager</span><span class="o">();</span>
+
+<span class="k">if</span> <span class="o">(</span><span class="n">pm</span><span class="o">.</span><span class="na">hasSystemFeature</span><span class="o">(</span><span class="n">PackageManager</span><span class="o">.</span><span class="na">FEATURE_CAMERA</span><span class="o">))</span> <span class="o">{</span>
+    <span class="c1">// Do camera stuff...</span>
+<span class="o">}</span>
+</pre></div>
+
+</code></pre>
+<p>I hope you found this info useful. It took me longer than I would have liked
+to figure this one out on my own.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2015/04/03/how-to-make-android-camera-permission-optional.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2015/04/03/how-to-make-android-camera-permission-optional.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Friday, 03 Apr 2015 07:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Swig Templating in Chrome Packaged Apps ]]></title>
+    <description><![CDATA[ <p><em>tl;dr sample code
+<a href="https://github.com/gschier/swig-templating-chrome-packaged-apps">https://github.com/gschier/swig-templating-chrome-packaged-apps</a></em></p>
+<p>I&#39;ve been working on a Chrome Packaged App
+(<a href="http://insomnia.rest">Insomnia REST Client</a>) for the past couple months and
+have leaned a lot. One of the biggest challenges about Packaged Apps
+is working around the
+<a href="https://developer.chrome.com/apps/contentSecurityPolicy">Content Security Policy</a>
+(CSP).</p>
+<p>The CSP makes it difficult to do common tasks such as accessing remote resources,
+embedding <code>iframes</code>, or using templating libraries.</p>
+<p>Today, I&#39;m going to demonstrate how to use a
+<a href="https://developer.chrome.com/apps/app_external#sandboxing">sandboxed</a> iframe
+and message passing to achieve template rendering with the
+<a href="http://paularmstrong.github.io/swig/">Swig</a> templating engine.</p>
+<p><strong>Note:</strong> if you don&#39;t need to live-render templates in-app then it is better
+to precompile your templates and include them in your app source. The following
+sandboxing workaround is only necessary if you need to render dynamic content
+or user-generated templates in-app.</p>
+<h2 id="overview">Overview</h2>
+<p>Due to the CSP, most templating engines are not allowed to execute in a Chrome
+Packaged App because of the use of <code>eval()</code>. Sandboxed pages, however, <em>are</em>
+allowed to use <code>eval()</code>. This means that rendering is possible, and we just
+need an easy way to communicate back and forth with the sandbox.
+Luckily this isn&#39;t that hard.</p>
+<p>Packaged Apps are allowed to communicate with sandboxes via message passing.
+Message passing allows the sending objects from one environment to another.
+We&#39;re going to leverage this feature to create a two-way rendering helper
+that works as follows:</p>
+<ul>
+<li>app passes content to render to the iframe (as a message)</li>
+<li>iframe script receives message, renders content</li>
+<li>iframe script passes new message to parent with rendered content</li>
+</ul>
+<p>These steps are shown in the illustration below:</p>
+<p><img src="/images/sandbox.png" alt="Swig Chrome Packaged App"></p>
+<p>Alright, let&#39;s get coding! Remember, you can view the full sample code
+<a href="https://github.com/gschier/swig-templating-chrome-packaged-apps">on Github</a>.</p>
+<h2 id="1-specify-the-sandboxed-page">1. Specify the Sandboxed Page</h2>
+<p><code>manifest.json</code> is a metadata file that defines the properties of a Chrome
+Packaged App (or extension). The only specific thing we need to include
+here is the <code>sandbox</code> attribute.</p>
+<pre><code class="lang-javascript"><div class="highlight"><pre><span class="cm">/** manifest.json */</span>
+
+<span class="s2">&quot;sandbox&quot;</span><span class="o">:</span> <span class="p">{</span>
+    <span class="c1">// define render.html as a sandboxed page</span>
+    <span class="s2">&quot;pages&quot;</span><span class="o">:</span> <span class="p">[</span> <span class="s2">&quot;render.html&quot;</span> <span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+
+</code></pre>
+<h2 id="2-include-sandboxed-iframe-">2. Include Sandboxed <code>iframe</code></h2>
+<p>In our app&#39;s main HTML page (<code>index.html</code>), we need to include the sandboxed
+page as an invisible iframe. We can then use the iframe to execute the <em>unsafe</em>
+Swig template code.</p>
+<pre><code class="lang-html"><div class="highlight"><pre><span class="c">&lt;!-- index.html --&gt;</span>
+
+<span class="c">&lt;!-- Use an iframe as a sandbox. This is what we&#39;ll use to render --&gt;</span>
+<span class="nt">&lt;iframe</span> <span class="na">src=</span><span class="s">&quot;render.html&quot;</span> <span class="na">id=</span><span class="s">&quot;sandbox&quot;</span> <span class="na">style=</span><span class="s">&quot;display:none&quot;</span><span class="nt">&gt;&lt;/iframe&gt;</span>
+
+<span class="c">&lt;!-- Include some sample JS to communicate with the sandbox --&gt;</span>
+<span class="nt">&lt;script </span><span class="na">src=</span><span class="s">&quot;index.js&quot;</span><span class="nt">&gt;&lt;/script&gt;</span>
+</pre></div>
+
+</code></pre>
+<h2 id="3-render-swig-template-from-sandbox">3. Render Swig Template from Sandbox</h2>
+<p>Now lets jump over to our sandboxed environment. The script below shows the
+code needed to listen for messages from the parent, and render a template.</p>
+<pre><code class="lang-html"><div class="highlight"><pre><span class="c">&lt;!-- render.html --&gt;</span>
+
+<span class="nt">&lt;script </span><span class="na">src=</span><span class="s">&quot;swig.js&quot;</span><span class="nt">&gt;&lt;/script&gt;</span>
+
+<span class="nt">&lt;script&gt;</span>
+    <span class="c1">// Listen for messages from within the iframe</span>
+    <span class="nb">window</span><span class="p">.</span><span class="nx">addEventListener</span><span class="p">(</span><span class="s1">&#39;message&#39;</span><span class="p">,</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">event</span><span class="p">)</span> <span class="p">{</span>
+
+        <span class="c1">// Render the content with the passed context</span>
+        <span class="kd">var</span> <span class="nx">content</span> <span class="o">=</span> <span class="nx">swig</span><span class="p">.</span><span class="nx">render</span><span class="p">(</span><span class="nx">event</span><span class="p">.</span><span class="nx">data</span><span class="p">.</span><span class="nx">template</span><span class="p">,</span> <span class="p">{</span>
+            <span class="nx">locals</span><span class="o">:</span> <span class="nx">event</span><span class="p">.</span><span class="nx">data</span><span class="p">.</span><span class="nx">context</span>
+        <span class="p">});</span>
+
+        <span class="c1">// Send a message back to the parent that sent it</span>
+        <span class="nx">event</span><span class="p">.</span><span class="nx">source</span><span class="p">.</span><span class="nx">postMessage</span><span class="p">({</span>
+            <span class="nx">content</span><span class="o">:</span> <span class="nx">content</span><span class="p">,</span>
+        <span class="p">},</span> <span class="nx">event</span><span class="p">.</span><span class="nx">origin</span><span class="p">);</span>
+    <span class="p">});</span>
+<span class="nt">&lt;/script&gt;</span>
+</pre></div>
+
+</code></pre>
+<p>Pretty simple right?</p>
+<h2 id="3-call-the-sandboxed-code">3. Call the Sandboxed Code</h2>
+<p>Now that we have sandboxed code to handle and render a message, lets call the
+code from our app.</p>
+<pre><code class="lang-javascript"><div class="highlight"><pre><span class="cm">/** index.js */</span>
+
+<span class="nb">window</span><span class="p">.</span><span class="nx">onload</span> <span class="o">=</span> <span class="kd">function</span> <span class="p">()</span> <span class="p">{</span>
+    <span class="c1">// Store current callback where it can be referenced</span>
+    <span class="kd">var</span> <span class="nx">globalCallback</span><span class="p">;</span>
+
+    <span class="cm">/**</span>
+<span class="cm">     * Handy helper function that we can call to render.</span>
+<span class="cm">     * This wraps the clunky two-way message passing into a</span>
+<span class="cm">     * friendly callback interface.</span>
+<span class="cm">     */</span>
+    <span class="kd">function</span> <span class="nx">render</span> <span class="p">(</span><span class="nx">template</span><span class="p">,</span> <span class="nx">context</span><span class="p">,</span> <span class="nx">callback</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">globalCallback</span> <span class="o">=</span> <span class="nx">callback</span><span class="p">;</span>
+
+        <span class="c1">// Grab the iframe sandbox</span>
+        <span class="kd">var</span> <span class="nx">iframe</span> <span class="o">=</span> <span class="nb">document</span><span class="p">.</span><span class="nx">getElementById</span><span class="p">(</span><span class="s1">&#39;sandbox&#39;</span><span class="p">);</span>
+
+        <span class="c1">// Put together a message to pass</span>
+        <span class="kd">var</span> <span class="nx">message</span> <span class="o">=</span> <span class="p">{</span> <span class="nx">template</span><span class="o">:</span> <span class="nx">template</span><span class="p">,</span> <span class="nx">context</span><span class="o">:</span> <span class="nx">context</span> <span class="p">};</span>
+
+        <span class="c1">// Send a message to sandbox with content to render</span>
+        <span class="nx">iframe</span><span class="p">.</span><span class="nx">contentWindow</span><span class="p">.</span><span class="nx">postMessage</span><span class="p">(</span><span class="nx">message</span><span class="p">,</span> <span class="s1">&#39;*&#39;</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Listen for messages that come back after rendering done</span>
+    <span class="nb">window</span><span class="p">.</span><span class="nx">addEventListener</span><span class="p">(</span><span class="s1">&#39;message&#39;</span><span class="p">,</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">event</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">globalCallback</span><span class="p">(</span><span class="nx">event</span><span class="p">.</span><span class="nx">data</span><span class="p">.</span><span class="nx">content</span><span class="p">);</span>
+    <span class="p">});</span>
+<span class="p">};</span>
+</pre></div>
+
+</code></pre>
+<h2 id="4-test-it-out-">4. Test it Out!</h2>
+<p>Now lets try out our <code>render()</code> method.</p>
+<pre><code class="lang-javascript"><div class="highlight"><pre><span class="cm">/** Call our render() function */</span>
+
+<span class="nx">render</span><span class="p">(</span><span class="s1">&#39;foo --&gt; &#39;</span><span class="p">,</span> <span class="p">{</span> <span class="nx">foo</span><span class="o">:</span> <span class="s1">&#39;bar&#39;</span> <span class="p">},</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">content</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nb">document</span><span class="p">.</span><span class="nx">body</span><span class="p">.</span><span class="nx">innerHTML</span> <span class="o">=</span> <span class="nx">content</span><span class="p">;</span>
+<span class="p">});</span>
+</pre></div>
+
+</code></pre>
+<h2 id="5-load-it-into-chrome">5. Load it Into Chrome</h2>
+<p>That&#39;s it. You can download and run the
+<a href="https://github.com/gschier/swig-templating-chrome-packaged-apps">sample code</a> in Chrome by
+following these steps:</p>
+<ul>
+<li>navigate to <code>chrome://extensions/</code></li>
+<li>enable <em>delevoper mode</em></li>
+<li>open project with <em>Load unpacked extension</em></li>
+</ul>
+<h2 id="final-thoughts">Final Thoughts</h2>
+<p>This post covered a basic implementation of using message passing to render
+a Swig template. The implementation that I use for
+<a href="http://insomnia.rest">Insomnia</a> is a bit more robust, but uses the same
+principles.</p>
+<p>If you want me to go more in depth on improving this code let me know on
+<a href="https://twitter.com/GregorySchier">Twitter</a>.</p>
+<p>Thanks for reading!</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/27/swig-templating-in-chrome-packaged-apps.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/27/swig-templating-in-chrome-packaged-apps.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Saturday, 27 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Google Analytics in Chrome Packaged Apps ]]></title>
+    <description><![CDATA[ <p><em>tl;dr use the
+<a href="https://github.com/GoogleChrome/chrome-platform-analytics/wiki">Chrome Platform Analytics Library</a>.</em></p>
+<p>Today I released my first <a href="http://insomnia.rest">Chrome Packaged App</a>. When I first set out to
+build a packaged app I didn&#39;t know how restrictive it would be. For security reasons, Google
+disallows a lot of behavior that is usually acceptable in regular web development. One of these
+behaviors is the execution of external scripts, such as
+<a href="http://www.google.com/analytics/">Google Analytics</a>.</p>
+<p>After spending a while on Google, I figured out how to properly use Google Analytics in a Chrome
+Packaged App. Here&#39;s how...</p>
+<p>Google has a Github repository called
+<a href="https://github.com/GoogleChrome/chrome-platform-analytics">Chrome Platform Analytics</a>. This repo
+contains a JavaScript library that can be downloaded and included as a local script in any
+packaged app. This gets around the external script restriction.</p>
+<p>The <a href="https://github.com/GoogleChrome/chrome-platform-analytics/wiki">wiki</a> provides all the
+instructions needed to get started.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/13/google-analytics-in-chrome-packaged-apps.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/13/google-analytics-in-chrome-packaged-apps.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Saturday, 13 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Ubuntu Update – Not Enough Free Space ]]></title>
+    <description><![CDATA[ <p>Twice now this has happened to me. After clicking the button to install updates an error message
+appears saying &quot;Not enough free disk space&quot;.</p>
+<p><img src="/images/softwareupdater.png" alt="Ubuntu not enough free disk space"></p>
+<p>After some Googling, I found a solution on the
+<a href="http://askubuntu.com/questions/293273/boot-folder-too-small-for-upgrade-from-ubuntu-12-10-to-13-04">Ask Ubuntu Forums</a>.</p>
+<p>This happens because some kernel packages hang around even after updated ones replace
+them. The solution is simple. Delete what is no longer being used.</p>
+<h2 id="step-1-find-your-kernel-release">Step 1 – Find Your Kernel Release</h2>
+<p>There is a handy command you can use called <code>uname</code>, which can print out various system
+information. Type <code>uname --help</code> to find out more.</p>
+<p>To print the current kernel release, use the <code>-r</code> option, which will look something like this:</p>
+<pre><code class="lang-bash"><div class="highlight"><pre><span class="c"># Print the current kernel release</span>
+uname -r
+
+<span class="c"># OUTPUT: 3.13.0-40-generic</span>
+</pre></div>
+
+</code></pre>
+<p>Hold on to the output of this for the next step.</p>
+<h2 id="step-2-uninstall-what-you-don-t-need">Step 2 – Uninstall What You Don&#39;t Need</h2>
+<p>It&#39;s time for the scary part. We&#39;re going to start removing old kernel packages that are no longer
+needed. <strong>If you remove the one that is currently in use, your machine will not boot!</strong></p>
+<p>Here&#39;s what we&#39;re going to do:</p>
+<ul>
+<li>use the <code>dpkg</code> command to figure out what&#39;s installed</li>
+<li>remove packages that aren&#39;t related to our current <em>kernel release</em> (from step 1)</li>
+</ul>
+<p><em>Note: You might only need to remove one or two packages to recover the amount of space needed.</em></p>
+<p>The following commands will list the packages that are installed. From here we can start installing
+things that don&#39;t match our kernel release.</p>
+<pre><code class="lang-bash"><div class="highlight"><pre>dpkg -l linux-image<span class="se">\*</span>
+dpkg -l linux-headers<span class="se">\*</span>
+dpkg -l linux-tools<span class="se">\*</span>
+
+<span class="c"># Sample output for &quot;linux-image\*&quot;</span>
+<span class="c"># ||/ Name                              Version               Architecture          Description</span>
+<span class="c"># +++-=================================-=====================-=====================-========================================================================</span>
+<span class="c"># un  linux-image                       &lt;none&gt;                &lt;none&gt;                (no description available)</span>
+<span class="c"># un  linux-image-3.0                   &lt;none&gt;                &lt;none&gt;                (no description available)</span>
+<span class="c"># rc  linux-image-3.13.0-32-generic     3.13.0-32.57          amd64                 Linux kernel image for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># ii  linux-image-3.13.0-37-generic     3.13.0-37.64          amd64                 Linux kernel image for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># ii  linux-image-3.13.0-39-generic     3.13.0-39.66          amd64                 Linux kernel image for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># ii  linux-image-3.13.0-40-generic     3.13.0-40.69          amd64                 Linux kernel image for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># rc  linux-image-extra-3.13.0-32-gener 3.13.0-32.57          amd64                 Linux kernel extra modules for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># ii  linux-image-extra-3.13.0-37-gener 3.13.0-37.64          amd64                 Linux kernel extra modules for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># ii  linux-image-extra-3.13.0-39-gener 3.13.0-39.66          amd64                 Linux kernel extra modules for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># ii  linux-image-extra-3.13.0-40-gener 3.13.0-40.69          amd64                 Linux kernel extra modules for version 3.13.0 on 64 bit x86 SMP</span>
+<span class="c"># ii  linux-image-generic               3.13.0.40.47          amd64                 Generic Linux kernel image</span>
+</pre></div>
+
+</code></pre>
+<p>Alright, let&#39;s remove some of these packages. Remember, you can remove any package that is is
+<strong>NOT</strong> associated with the kernel release outputted by <code>uname -r</code>.</p>
+<pre><code class="lang-bash"><div class="highlight"><pre>sudo apt-get purge <span class="se">\</span>
+    linux-image-3.13.0-XX-generic <span class="se">\</span>
+    linux-image-3.13.0-YY-generic <span class="se">\</span>
+    linux-image-3.13.0-ZZ-generic <span class="se">\</span>
+    linux-headers...<span class="se">\</span>
+    linux-tools...
+</pre></div>
+
+</code></pre>
+<h2 id="step-3-on-with-your-life">Step 3 – On With Your Life</h2>
+<p>After removing a couple unneeded packages, you should be able to open up the Software Updater and
+try again.</p>
+<p><img src="/images/updater.png" alt="Ubuntu Software Updater"></p>
+<h2 id="wrap-up">Wrap Up</h2>
+<p>So how can you prevent this from happening again? You can either delete more packages from the
+commands ran above, increase the size of your <code>/boot</code> partition (extremely scary), or be lazy
+like me and repeat this process when needed.</p>
+<p>I&#39;ve made a mental note to allocate more space for <code>/boot</code> next time I reinstall my computer but
+doubt I&#39;ll remember when the time comes.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/11/ubuntu-update-not-enough-free-space.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/11/ubuntu-update-not-enough-free-space.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Thursday, 11 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Domain Redirection Using Amazon S3 ]]></title>
+    <description><![CDATA[ <p>Setting up redirect is one of the most common tasks in web development. Whether redirecting
+a single page to another, or redirecting an entire domain to a new one. Knowing how to set up
+redirects is a basic requirement for any web developer. In this post, I&#39;m going to show you how to
+set up a domain redirect with nothing more than an <a href="http://aws.amazon.com/s3/">Amazon S3</a> bucket.</p>
+<h2 id="common-use-cases">Common Use Cases</h2>
+<p>There are a lot of different use cases for redirection. The one I&#39;m going focus on today is the
+domain redirect. This means redirecting all traffic for a single domain to a new one.
+There are a lot of use cases where this type of redirect is needed. Here are a few that come to
+mind right away:</p>
+<ul>
+<li><code>www.domain.com -&gt; domain.com</code></li>
+<li><code>olddomain.com -&gt; newdomain.com</code></li>
+<li><code>blog.domain.com -&gt; domain.com/blog</code></li>
+</ul>
+<p>The most common way to implement redirects is to add redirect rules to a webserver configuration
+file (Apache, Nginx, etc). This is usually the easiest approach, but there are a few cases
+where this solution is either inconvenient, difficult, or impossible to implement. Here are some
+examples of why that might be:</p>
+<ul>
+<li>hosting a website on a platform that you do not control</li>
+<li>using a platform like <a href="nodejs.org">NodeJS</a> where redirect implementation is not built-in</li>
+<li>hosting a static website.</li>
+</ul>
+<p>For these use cases, domain redirects needs to be implemented external to the main webserver.
+Setting up an Apache server to strictly manage redirects would be overkill and expensive. Luckily,
+S3 provides an easy and cheap way to do redirects with almost no work involved.</p>
+<h2 id="domain-redirects-on-amazon-s3">Domain Redirects on Amazon S3</h2>
+<p>Amazon S3 is a storage service usually used for storing static assets like images, scripts
+and stylesheets. One of the lesser-known facts of S3 is that it can also be set to two other
+modes: a static webserver, or a basic redirect server.</p>
+<p>I currently have two redirects on <em>schier.co</em>. All traffic going to
+<code>www.schier.co</code> forwards to <code>schier.co</code> and all traffic going to <code>blog.schier.co</code> goes to
+<code>schier.co/blog</code>. An important requirement of this is that <code>blog.schier.co/my/first/post</code> needs
+to maintain its path and redirect to <code>schier.co/blog/my/first/post</code>. Luckily, S3 handles this
+scenario out of the box.</p>
+<h2 id="enabling-domain-redirection-on-amazon-s3">Enabling Domain Redirection on Amazon S3</h2>
+<p>Adding domain redirects with S3 can be done in just a few steps. The first is to
+create a new bucket from the admin panel. The important thing to point out here is that the bucket
+name must match the name of the URL pointing to it, or <strong>it won&#39;t work</strong>.</p>
+<p>In this example I&#39;ll be redirecting <code>blog.schier.co</code> to <code>schier.co/blog</code> so I need to make a
+bucket called <code>blog.schier.co</code>.</p>
+<p><a href="/images/s3newbucket.png" target="_blank">
+    <img alt="blog.schier.co Bucket" src="/images/s3newbucket.png" />
+</a></p>
+<p>Now that I have a bucket, I need to point the <code>blog</code> subdomain domain at it. To do this, I&#39;ll need
+to create a CNAME DNS record. This step will be different depending on your domain registrar but
+the concepts basic concepts are the same.</p>
+<p><a href="/images/hover.png" target="_blank">
+    <img alt="Schier.co Redirects" src="/images/hover.png" />
+</a></p>
+<p>In the screenshot above, I&#39;ve entered a new CNAME record that points <code>blog</code> to the URL of the S3
+bucket <code>blog.schier.co.s3-website-us-east-1.amazonaws.com</code>. The last step is to actually create
+the redirect rule. First, I&#39;ll navigate to the bucket properties and click on <em>Static Website
+Hosting</em>, then check the bubble saying <em>Redirect all requests to another host</em>. Here&#39;s what it
+looks like:</p>
+<p><a href="/images/s3redirect.png" target="_blank">
+    <img alt="Schier.co Redirects" src="/images/s3redirect.png" />
+</a></p>
+<p>At this point the redirect should be functional. Try going to
+<a href="http://blog.schier.co/2014/12/09/domain-redirection-using-amazon-s3.html">blog.schier.co/2014/12/09/domain-redirection-using-amazon-s3.html</a>
+to see it in action.</p>
+<h2 id="wrap-up">Wrap Up</h2>
+<p>That&#39;s it for this tutorial.</p>
+<p>As always, feel free to reach out on Twitter or Google Plus if you have any questions.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/09/domain-redirection-using-amazon-s3.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/09/domain-redirection-using-amazon-s3.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Tuesday, 09 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Wait for User to Stop Typing, Using JavaScript ]]></title>
+    <description><![CDATA[ <p>Here&#39;s the scenario. You have a search feature on your website that you want to live-update while
+the user types. The naive solution would be to execute a search query on every keystroke. This
+falls apart, however, because the user can usually type faster your server can respond. This makes
+for a poor user experience and an overloaded server.</p>
+<p>The solution to this is to execute the search only after the user stops typing. I&#39;m going to show
+you how to implement this in just a few lines of code.</p>
+<h2 id="listen-for-user-input">Listen For User Input</h2>
+<p>Here is some HTML and JavaScript to log the current value of an <code>input</code> whenever the user presses
+a key. In the real world, this log could just as easily be a function call to execute a search
+query.</p>
+<pre><code class="lang-html"><div class="highlight"><pre><span class="c">&lt;!-- a simple input box --&gt;</span>
+<span class="nt">&lt;input</span> <span class="na">type=</span><span class="s">&quot;text&quot;</span> <span class="na">id=</span><span class="s">&quot;test-input&quot;</span> <span class="nt">/&gt;</span>
+</pre></div>
+
+</code></pre>
+<pre><code class="lang-javascript"><div class="highlight"><pre><span class="c1">// Get the input box</span>
+<span class="kd">var</span> <span class="nx">textInput</span> <span class="o">=</span> <span class="nb">document</span><span class="p">.</span><span class="nx">getElementById</span><span class="p">(</span><span class="s1">&#39;test-input&#39;</span><span class="p">);</span>
+
+<span class="c1">// Listen for keystroke events</span>
+<span class="nx">textInput</span><span class="p">.</span><span class="nx">onkeydown</span> <span class="o">=</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">e</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s1">&#39;Input Value:&#39;</span><span class="p">,</span> <span class="nx">textInput</span><span class="p">.</span><span class="nx">value</span><span class="p">);</span>
+<span class="p">};</span>
+</pre></div>
+
+</code></pre>
+<div class="text-center" style="background: #f5f5f5;padding:1em;">
+    <h3>Demo 1 – Output on Every Keystroke</h3>
+    <input type="text"
+        id="test-input"
+        style="padding: 0.3em 0.7em; margin: 2em 0 1em 0;"
+        placeholder="start typing..." />
+    <pre>Input Value: &quot;<span id="test-output"></span>&quot;</pre>
+</div>
+
+<script>
+(function () {
+    var textInput = document.getElementById('test-input');
+    var el = document.getElementById('test-output');
+    textInput.onkeyup = function (e) {
+        el.innerHTML = textInput.value;
+    };
+})();
+</script>
+
+<p>As you can see, there&#39;s nothing wrong with printing a log on every keystroke. It works just fine.
+However, if that log message was replaced by a network call to make a search query, it would start
+making too many requests. This would both slow down the UI and potentially overload the server.
+So how do we fix this?</p>
+<h2 id="wait-for-typing-to-stop">Wait for Typing to Stop</h2>
+<p>In order to execute a chunk of code after the user stops typing we need to know about a few things:</p>
+<p><code>setTimeout(callback, milliseconds)</code> and <code>clearTimeout(timeout)</code></p>
+<p><code>setTimeout</code> is a JavaScript function that executes a function (<code>callback</code>) after a given amount
+of time has elapsed (<code>milliseconds</code>). <code>clearTimeout</code> is another function that you can
+use to cancel a timeout if it hasn&#39;t executed yet.</p>
+<p>So how do we use these things to detect when a user stops typing? Here&#39;s some code to show you.
+Hopefully I&#39;ve added enough comments to make it clear what&#39;s going on.</p>
+<pre><code class="lang-javascript"><div class="highlight"><pre><span class="c1">// Get the input box</span>
+<span class="kd">var</span> <span class="nx">textInput</span> <span class="o">=</span> <span class="nb">document</span><span class="p">.</span><span class="nx">getElementById</span><span class="p">(</span><span class="s1">&#39;test-input&#39;</span><span class="p">);</span>
+
+<span class="c1">// Init a timeout variable to be used below</span>
+<span class="kd">var</span> <span class="nx">timeout</span> <span class="o">=</span> <span class="kc">null</span><span class="p">;</span>
+
+<span class="c1">// Listen for keystroke events</span>
+<span class="nx">textInput</span><span class="p">.</span><span class="nx">onkeyup</span> <span class="o">=</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">e</span><span class="p">)</span> <span class="p">{</span>
+
+    <span class="c1">// Clear the timeout if it has already been set.</span>
+    <span class="c1">// This will prevent the previous task from executing</span>
+    <span class="c1">// if it has been less than &lt;MILLISECONDS&gt;</span>
+    <span class="nx">clearTimeout</span><span class="p">(</span><span class="nx">timeout</span><span class="p">);</span>
+
+    <span class="c1">// Make a new timeout set to go off in 800ms</span>
+    <span class="nx">timeout</span> <span class="o">=</span> <span class="nx">setTimeout</span><span class="p">(</span><span class="kd">function</span> <span class="p">()</span> <span class="p">{</span>
+        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s1">&#39;Input Value:&#39;</span><span class="p">,</span> <span class="nx">textInput</span><span class="p">.</span><span class="nx">value</span><span class="p">);</span>
+    <span class="p">},</span> <span class="mi">500</span><span class="p">);</span>
+<span class="p">};</span>
+</pre></div>
+
+</code></pre>
+<div class="text-center" style="background: #f5f5f5;padding:1em;">
+    <h3>Demo 2 – Output when Typing Stops</h3>
+    <input type="text"
+        id="test-input-2"
+        style="padding: 0.3em 0.7em; margin: 2em 0 1em 0;"
+        placeholder="start typing..." />
+    <pre>Input Value: &quot;<span id="test-output-2"></span>&quot;</pre>
+</div>
+
+<script>
+(function () {
+    var textInput = document.getElementById('test-input-2');
+    var el = document.getElementById('test-output-2');
+    var timeout = null;
+
+    textInput.onkeyup = function (e) {
+        clearTimeout(timeout);
+        timeout = setTimeout(function () { el.innerHTML = textInput.value; }, 500);
+    };
+})();
+</script>
+
+<p>As you can see in the demo above, nothing is outputted until no key presses have happened for 500
+milliseconds. Exactly what we wanted.</p>
+<h2 id="wrap-up">Wrap-Up</h2>
+<p>That&#39;s it. All it takes to delay execution while typing is 5 lines of code. Feel free to ask
+questions on <a href="https://twitter.com/gregoryschier">Twitter</a> or
+<a href="https://plus.google.com/102509209246537377732">Google Plus</a> if you have any.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/08/wait-for-user-to-stop-typing-using-javascript.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/08/wait-for-user-to-stop-typing-using-javascript.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Monday, 08 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Call for Beta Testers ]]></title>
+    <description><![CDATA[ <p><em>tl;dr</em> I&#39;m building a Chrome app (currently called Bodybuilder) for managing API calls, similar to
+<a href="http://getpostman.com">Postman</a>. If you want to join the beta,
+<a href="https://groups.google.com/forum/#!forum/resterbeta">submit a request</a> and I&#39;ll add you.</p>
+<p><a href="/images/bodybuilder.png" target="_blank">
+    <img alt="Bodybuilder REST Client" src="/images/bodybuilder.png" />
+</a></p>
+<h2 id="motivations-for-bodybuilder">Motivations for Bodybuilder</h2>
+<p>A few months ago, a friend introduced me to <a href="https://www.getpostman.com/">Postman</a>. Postman is a
+Chrome app that makes testing REST APIs super easy. As an engineer at
+<a href="https://www.sendwithus.com">sendwithus</a>, I interact with HTTP-based APIs constantly. Whether I&#39;m
+working on a new feature, debugging, or simply using the product, having the ability to interact
+with the API in an efficient way is a basic need.</p>
+<p>Before Postman, my workflow consisted of copying cURL commands from a text file into my command
+line. This got the job done, but it wasn&#39;t elegant or efficient. Postman allowed me to save all
+API calls in a single place and access them in one click. It was great.</p>
+<p>There were problems though. The more I used Postman the more frustrated I became. The create/save
+workflow was confusing, the fact that I couldn&#39;t tie <em>environments</em> to <em>collections</em> annoyed me,
+the amount of scrolling required to edit/view request/response bodies was frustrating, and the
+overall UI was cluttered and unintuitive. The developer in me wanted to fix these things.</p>
+<h2 id="introducing-bodybuilder">Introducing Bodybuilder</h2>
+<p>Part of Postman&#39;s problem is that it has a lot of features – over 80. It&#39;s hard to keep a
+simple and cohesive user experience with that many features. While designing Bodybuilder, I wanted
+to prioritize user experience over features. I wanted to focus on the core problem I was trying to
+solve, which was to move from my text file of cURL requests to something better. So far I
+think I&#39;ve done that.</p>
+<p>Here are the features I want to be in Bodybuilder at launch:</p>
+<ul>
+<li><code>[x]</code> create/edit/delete request groups</li>
+<li><code>[x]</code> create/edit/delete requests</li>
+<li><code>[x]</code> syntax highlighting/validation of JSON request bodies</li>
+<li><code>[ ]</code> syntax highlighting/validation of formencoded data</li>
+<li><code>[x]</code> import/export of data</li>
+<li><code>[x]</code> no scrolling, unless absolutely needed</li>
+<li><code>[x]</code> custom request headers</li>
+<li><code>[x]</code> basic auth generator</li>
+<li><code>[x]</code> basic request info: timing, error handling, etc</li>
+<li><code>[x]</code> basic request info: timing, error handling, etc</li>
+<li><code>[x]</code> basic templating for common <code>{{ variables }}</code></li>
+</ul>
+<p>These might make it in, depending how ambitious I feel:</p>
+<ul>
+<li><code>[ ]</code> basic helpers<ul>
+<li><code>[ ]</code> form encoding/decoding text</li>
+<li><code>[ ]</code> base64 encoding/decoding text</li>
+<li><code>[ ]</code> timestamp generator</li>
+</ul>
+</li>
+</ul>
+<h2 id="wrap-up">Wrap Up</h2>
+<p>As mentioned above, if you want to be apart of the beta test group, you can
+<a href="https://groups.google.com/forum/#!forum/resterbeta">submit a request</a> and I&#39;ll add you.</p>
+<p>Also, if you have any suggestions or comments, let me know.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/07/call-for-beta-testers.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/07/call-for-beta-testers.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Sunday, 07 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Cyanogenmod Alarm Clock Turns Itself Off ]]></title>
+    <description><![CDATA[ <p><a href="http://www.cyanogenmod.org/">Cynanogenmod</a> is an <em>aftermarket firmware</em> (typicically known
+as a custom ROM) for Android. It adds many new features and makes a lot of improvements, especially
+for the power user. Some of these improvements are in the alarm clock app.</p>
+<p>I&#39;ve been using Cyanogenmod for years. Recently I noticed that sometimes the alarm clock
+will go off in the morning, then snooze by itself without me touching it. I thought this would seem
+like an obvious bug and get fixed right away, but it hasn&#39;t. This morning it finally hit me. I
+now know the reason for this unexpected behaviour.</p>
+<p><img src="/images/cyanogenmod_alarm_1.png" alt="Cynanogenmod Alarm Clock"></p>
+<p>The screenshot above shows a setting in the app to <em>snooze alarm</em> when the phone is shaken.</p>
+<p>The next screenshot shows a setting to vibrate the phone when the alarm goes off. I&#39;m sure
+you can put the pieces together yourself at this point.</p>
+<p><img src="/images/cyanogenmod_alarm_2.png" alt="Cynanogenmod Alarm Clock"></p>
+<p>You guessed it. The vibration of the phone can cause enough movement to trigger the snooze of the
+alarm clock. Simply disable one of these settings and it won&#39;t happen anymore.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/06/cyanogenmod-alarm-clock-turns-itself-off.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/06/cyanogenmod-alarm-clock-turns-itself-off.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Saturday, 06 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ HTML Templating – Output a Grid in a Single Loop ]]></title>
+    <description><![CDATA[ <p>It was about a two years ago. I was working on a food startup and needed to display some food
+photos in a six-column grid. The image below shows what the end result looked like:</p>
+<p><img src="/images/food.jpg" alt="Six-column Grid"></p>
+<p>I was using <a href="https://getbootstrap.com">Bootstrap</a>, which requires an HTML element to be wrapped
+around each column and each row. Here&#39;s a sample of Bootstrap showing two rows of four columns each:</p>
+<pre><code class="lang-html"><div class="highlight"><pre><span class="c">&lt;!-- 2 row - 4 column grid --&gt;</span>
+
+<span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;row&quot;</span><span class="nt">&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 1<span class="nt">&lt;/div&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 2<span class="nt">&lt;/div&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 3<span class="nt">&lt;/div&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 4<span class="nt">&lt;/div&gt;</span>
+<span class="nt">&lt;/div&gt;</span>
+<span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;row&quot;</span><span class="nt">&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 5<span class="nt">&lt;/div&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 6<span class="nt">&lt;/div&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 7<span class="nt">&lt;/div&gt;</span>
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>Item 8<span class="nt">&lt;/div&gt;</span>
+<span class="nt">&lt;/div&gt;</span>
+</pre></div>
+
+</code></pre>
+<p>My first attempt at a solution involved putting the items in a 2D grid and using nested loops
+in the HTML template. I had to transform the data to look like this:</p>
+<pre><code class="lang-js"><div class="highlight"><pre><span class="kd">var</span> <span class="nx">items</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">[</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span>
+    <span class="p">[</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">]</span>
+<span class="p">]</span>
+</pre></div>
+
+</code></pre>
+<p>This required a template that looked like this:</p>
+<pre><code class="lang-html"><div class="highlight"><pre><span class="c">&lt;!-- Django Templating --&gt;</span>
+
+{% for row in rows %}
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;row&quot;</span><span class="nt">&gt;</span>
+        {% for item in row %}
+            <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>{{ item }}<span class="nt">&lt;/div&gt;</span>
+        {% endfor %}
+    <span class="nt">&lt;/div&gt;</span>
+{% endfor %}
+</pre></div>
+
+</code></pre>
+<p>While that solution worked fine, I wanted to simplify it and keep the grid logic in the
+template. Ideally, the data would be kept in a regular array like this:</p>
+<pre><code class="lang-js"><div class="highlight"><pre><span class="kd">var</span> <span class="nx">items</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span>
+<span class="p">]</span>
+</pre></div>
+
+</code></pre>
+<p>After a lot of thinking and failure, I ended up coming up with a fairly elegant solution. It&#39;s a
+bit hard to explain how it work so I put together some simple pseudocode that hopefully explains the
+algorithm without cluttering it up with ugly HTML tags.</p>
+<pre><code class="lang-js"><div class="highlight"><pre><span class="cm">/** Pseudocode for Printing Grids **/</span>
+
+<span class="nx">PRINT</span> <span class="s2">&quot;[[&quot;</span>
+<span class="nx">FOR</span> <span class="nx">all</span> <span class="nx">items</span>
+    <span class="nx">PRINT</span> <span class="s2">&quot;&lt;&lt; COUNT &gt;&gt;&quot;</span>
+    <span class="nx">IF</span> <span class="nx">last</span> <span class="nx">column</span> <span class="k">in</span> <span class="nx">row</span>
+        <span class="nx">PRINT</span> <span class="s2">&quot;]] [[&quot;</span>
+<span class="nx">PRINT</span> <span class="s2">&quot;]]&quot;</span>
+
+<span class="cm">/** Output for 5 Items */</span>
+<span class="s2">&quot;[[ &lt;&lt; 1 &gt;&gt; &lt;&lt; 2 &gt;&gt; &lt;&lt; 3 &gt;&gt; ]] [[ &lt;&lt; 4 &gt;&gt; &lt;&lt; 5 &gt;&gt; ]]&quot;</span>
+
+
+<span class="cm">/**</span>
+<span class="cm">    Note that for 6 items it will print an empty row at</span>
+<span class="cm">    the end unless you also check that it&#39;s not the last</span>
+<span class="cm">    item in the loop.</span>
+<span class="cm">*/</span>
+</pre></div>
+
+</code></pre>
+<p>Now that we have a rough idea of what our code needs to look like, we can write some actual HTML.</p>
+<pre><code class="lang-html"><div class="highlight"><pre><span class="c">&lt;!-- Django Templating --&gt;</span>
+
+<span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;row&quot;</span><span class="nt">&gt;</span>
+
+    {% for item in items %}
+    <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">&quot;col-md-3&quot;</span><span class="nt">&gt;</span>{{ item }}<span class="nt">&lt;/div&gt;</span>
+
+        <span class="c">&lt;!-- if last column in row --&gt;</span>
+        {% if forloop.counter | divisibleby:&quot;4&quot; and not forloop.last %}
+        <span class="nt">&lt;/div&gt;&lt;div</span> <span class="na">class=</span><span class="s">&quot;row&quot;</span><span class="nt">&gt;</span>
+        {% endif %}
+
+    {% endfor %}
+
+<span class="nt">&lt;/div&gt;</span>
+</pre></div>
+
+</code></pre>
+<p>And that&#39;s it. We can now generate a grid layout in a single loop without changing the way our
+data looks.</p>
+<p>I hope this explanation was clear enough. Feel free to reach out if you have any questions or
+comments.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/05/html-templating-output-a-grid-in-a-single-loop.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/05/html-templating-output-a-grid-in-a-single-loop.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Friday, 05 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ Succeeding in the Play Store ]]></title>
+    <description><![CDATA[ <p>One of my favourite things to do is start new side projects. Three years ago, my roommate
+<a href="https://twitter.com/acorscadden">Adrian</a> and I decided to build a mobile app to keep track of
+the books we wanted to read. So we put together some designs and started building.</p>
+<p>We came up with the name <em>To Read</em>. The plan was to build functional apps for iOS and Android
+and submit both before the weekend ended. At the expense of a bit of sleep, we made our deadline.
+Adrian built the <a href="https://itunes.apple.com/ca/app/to-read-reading-list/id562795303">iOS app</a>
+and I wrote and <a href="https://play.google.com/store/apps/details?id=com.gregschier.toread">Android app</a>.</p>
+<p><img src="/images/toread_promo.png" alt="To Read – Reading List"></p>
+<p>Three years has passed since then and I&#39;ve learned a lot. This wasn&#39;t the first Android app I&#39;d built
+but it was the first to be geared towards the global market. The other apps I&#39;d made had
+either been local-specific or small one-off experiments with no real attempt to grow a user base.</p>
+<p>I wanted to get a lot of users on To Read so I spent a lot of time trying
+different things to see if they worked. I&#39;m going to talk about a few of the main things I tried, but
+there are quite a few that won&#39;t make it in to this post. If you&#39;re curious, I&#39;m always up for
+chatting. You can find my contact info somewhere on this page. Anyway, here&#39;s what I did.</p>
+<h2 id="1-description-and-screenshots">1. Description and Screenshots</h2>
+<p>This is key. Every app is required to have a description and screenshots, and for good reason.
+I don&#39;t actually have any data on how well this works since it was the first thing
+I did, but I do know how much I appreciate quality screenshots when looking for new apps to try.</p>
+<p>Don&#39;t hesitate on this one, just do it. Also be sure to upload screenshots for all device sizes
+you support because, depending on what device is viewing the Play Store, different screenshots will
+be shown to based on the characteristics of the device.</p>
+<h2 id="2-social-media">2. Social Media</h2>
+<p>I don&#39;t have much to say here. I put up a Google Plus page but never really had enough time to
+engage with community and build an audience. This is the something I would like to do if I had the
+time to spend on it.</p>
+<h2 id="3-advertising">3. Advertising</h2>
+<p>After the first month of waiting, To Read wasn&#39;t gaining any traction. I was determined to get
+users, but I didn&#39;t have much spare time to spend on doing something creative – so I tried throwing
+money at it. I put up some adds on <a href="http://www.google.com/ads/admob/?_adc=">AdMob</a> and my bank
+account balance started going down.</p>
+<p>AdMob didn&#39;t bring in a lot of users. About fifty per day at most. I couldn&#39;t even really notice
+a bump from advertising in the active users graph. It also turned out that the users that came in
+through advertising were not very active. I had implemented some behavior tracking using
+<a href="http://www.flurry.com/">Flurry</a>, which turned out to be super useful for monitoring user activity.
+It helped me and noticed that the users that came from ads basically didn&#39;t even use the app. So,
+after spending about $200, I moved on.</p>
+<h2 id="3-waiting">3. Waiting</h2>
+<p>One of the strang things I noticed after submitting To Read to Google Play was how long it took
+before it started appearing in search results. I expected my wait time to be measure in days.
+However, this was not the case. I kept waiting...</p>
+<p>I expected To Read&#39;s invisibility in search to have an impact on install numbers. I wasn&#39;t doing
+any marketing so the only way to get users organically was through Google Play search. The worst
+part about it was that I had no control.</p>
+<p>I kept waiting, and eventually gave up. A few months later I took another shot at advertising,
+spending another few hundred dollars. Nothing.</p>
+<p>All development on To Read had stopped for almost a year. I checked the stats once in a while
+but nothing really changed. Last November, however, brought a bit of surprise. Numbers suddenly
+started going up.</p>
+<p>They kept going up. Exponentially. What the fuck!? Two weeks later and they were still increasing.
+I had to find out why. I forget how I came across it, but I searched for <em>reading list</em> on Google
+Play and found To Read at the top.</p>
+<p><img src="/images/toread_search.png" alt="To Read – Reading List"></p>
+<p>It&#39;s still there today. I was happy. Below shows the install graph for To Read. The graph
+was much more impressive at the time. When looking at the graph around February 2014 it created
+the ideal hockey stick shape that everyone dreams of.</p>
+<p><img src="/images/toread_graph.png" title="To Read" style="max-width:100%;border:1px solid #eee;" /></p>
+<p>I still don&#39;t know how or why it happened, but I&#39;m very curious. Why did it take so long to become
+searchable? Does it always take that long? Were the key words too generic? I&#39;ll never know.</p>
+<h2 id="closing-thoughts">Closing Thoughts</h2>
+<p>The main thing I learned from this experience was that the mobile app world mostly luck. Sure,
+there are things you can do to increase your odds, but in the end it all comes down to luck.</p>
+<p>You probably noticed installs have started to trail off lately. Again, I have no idea why. Nothing
+has changed that I&#39;ve noticed. I plan on doing a few more updates but as I said before, I&#39;m pretty
+busy. Maybe I&#39;ll get lucky again and have another growth spurt.</p>
+<p>Thanks for reading.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/04/succeeding-in-the-play-store.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/04/succeeding-in-the-play-store.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Thursday, 04 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+<item>
+    <title><![CDATA[ The Perfect Static Website Generator is the One You Write Yourself ]]></title>
+    <description><![CDATA[ <p>There are many static website generators out there
+(see <a href="http://www.staticgen.com/">staticgen.com</a>). This post is to explain why I chose to
+write my own generator instead of using an off-the-shelf solution.</p>
+<h1 id="what-is-a-static-website-generator-">What is a Static Website Generator?</h1>
+<p>A static website generator is typically a command line tool that takes a directory of files,
+performs operations on them, and then writes the output to a <em>build</em> directory. The build
+directory is usually deployed to a static website host such as
+<a href="https://pages.github.com/">Github Pages</a> or <a href="http://aws.amazon.com/s3/">Amazon S3</a>.</p>
+<p>Here are some examples of operations that a static generator might perform:</p>
+<ul>
+<li>render template logic</li>
+<li>parse and convert <a href="http://daringfireball.net/projects/markdown/">Markdown</a> to HTML</li>
+<li>run CSS preprocessors</li>
+<li>compress or resize images</li>
+<li>compile, minify, and concatenate JavaScript</li>
+</ul>
+<p>This is just a short list of some of the operations a static generator might be required to
+do but there is much more that could be added to that list, including use-case-specific
+functionality.</p>
+<p>It was not too long ago that I found myself with my own use case for a static generator. Here is
+the process I went through along with the conclusions I made along the way...</p>
+<h2 id="finding-the-perfect-generator-for-me">Finding the Perfect Generator for Me</h2>
+<p>I spent a long time researching static generators. I was looking for one
+built on NodeJS that supported a <a href="http://jinja.pocoo.org/docs/dev/">Jinja</a>-like template
+language. I found a couple that could have worked, but none were perfect. There was always
+that one little thing missing that I couldn&#39;t do without. No matter how hard I looked I couldn&#39;t
+find one for me. It made me sad.</p>
+<p>There are so many ways to implement features of a static generator. Look at templating,
+for example. Let&#39;s say I&#39;m writing a generic static website generator expecting
+many people to use it. I&#39;ll probably pick the template language that the most people will like. If
+there is enough demand I might add a few more, but that&#39;s a lot of work.</p>
+<p>The problem is that there are literally hundreds of template languages in the world, making it
+impossible for a generator to support all of them. If I do happen find a generator that supports
+my desired templating language then what are the chances that it will also support SASS and
+CoffeeScript, have support for image compression, and be compatible with my specific work flow?
+Basically zero.</p>
+<p>One static generator that caught my eye was <a href="http://www.metalsmith.io/">Metalsmith</a>,
+written by the good folks at <a href="https://segment.com/">Segment</a>. Matalsmith is essentially a plugin
+system for generating static websites which means it uses plugins to do almost everything.
+When I saw Metalsmith I got excited. I knew it could find a plugin for most things and then write
+my own plugins if needed for more specific functionality. That&#39;s when it hit me.</p>
+<p><strong>Fuck plugins</strong>. I&#39;ll just write my own generator.</p>
+<h2 id="just-write-your-own">Just Write Your Own</h2>
+<p>Static generators read, transform, and write files. The read and write steps are trivial to
+implement and the transform step can usually be done by calling a third-party module.</p>
+<p>So, if I can write a simple script to read and write files from a source directory to a build
+directory, I should be able to easily <em>plug</em> code in between to do transformations. The more I
+thought about it, the more I realized how easy it actually was.</p>
+<p>To help get my point across, here is a simplified static generator written in a few lines of Python:</p>
+<pre><code class="lang-python"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot; a simple static website generator &quot;&quot;&quot;</span>
+
+<span class="k">for</span> <span class="nb">file</span> <span class="ow">in</span> <span class="n">directory</span><span class="o">.</span><span class="n">getFilesRecursively</span><span class="p">():</span>
+
+    <span class="c"># render Markdown</span>
+    <span class="k">if</span> <span class="nb">file</span><span class="o">.</span><span class="n">extension</span> <span class="o">==</span> <span class="s">&#39;.md&#39;</span><span class="p">:</span>
+        <span class="n">bodyContent</span> <span class="o">=</span> <span class="n">renderMarkdown</span><span class="p">(</span><span class="nb">file</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+
+    <span class="c"># compile SASS</span>
+    <span class="k">elif</span> <span class="nb">file</span><span class="o">.</span><span class="n">extension</span> <span class="o">==</span> <span class="s">&#39;.scss&#39;</span><span class="p">:</span>
+        <span class="n">bodyContent</span> <span class="o">=</span> <span class="n">compileSass</span><span class="p">(</span><span class="nb">file</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+
+    <span class="c"># compress images</span>
+    <span class="k">elif</span> <span class="nb">file</span><span class="o">.</span><span class="n">extension</span> <span class="ow">in</span> <span class="p">[</span><span class="s">&#39;.jpg&#39;</span><span class="p">,</span> <span class="s">&#39;.jpeg&#39;</span><span class="p">,</span> <span class="s">&#39;.png&#39;</span><span class="p">]:</span>
+        <span class="n">bodyContent</span> <span class="o">=</span> <span class="n">compressImage</span><span class="p">(</span><span class="nb">file</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+
+    <span class="c"># leave alone (HTML files, JavaScript, etc)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">bodyContent</span> <span class="o">=</span> <span class="nb">file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="c"># render the template</span>
+    <span class="n">renderedContent</span> <span class="o">=</span> <span class="n">templateLibrary</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">bodyContent</span><span class="p">)</span>
+
+    <span class="c"># write the file to the build directory</span>
+    <span class="n">buildPath</span> <span class="o">=</span> <span class="nb">file</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;/source&#39;</span><span class="p">,</span> <span class="s">&#39;/build&#39;</span><span class="p">)</span>
+    <span class="n">writeFile</span><span class="p">(</span><span class="n">buildPath</span><span class="p">,</span> <span class="n">renderedContent</span><span class="p">)</span>
+</pre></div>
+
+</code></pre>
+<p>There are a few things missing but making this code actually work isn&#39;t hard. The hardest
+part is be picking modules and reading module documentation, which is exactly what I would of had
+to do if I used Metalsmith except I wouldn&#39;t get the enjoyment of hacking on something on my own.</p>
+<h2 id="advice-to-you">Advice to You</h2>
+<p>So after all of this, I have built a working static site generator in NodeJS. The code is up
+on <a href="https://github.com/gschier/balloon">Github</a> but I don&#39;t recommend using it. I think the total
+line count for version zero was around ~500 lines of code but it&#39;s gone up since then from added
+features. I&#39;m also currently in the process of breaking the code up into components to make it a
+bit more maintainable.</p>
+<p>And finally, here is my advice to you:</p>
+<pre><code class="lang-python"><div class="highlight"><pre><span class="k">def</span> <span class="nf">shouldWriteOwnStaticGenerator</span><span class="p">(</span><span class="n">person</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">person</span><span class="o">.</span><span class="n">isPickyAboutTech</span><span class="p">():</span>
+        <span class="k">return</span> <span class="s">&quot;Yes&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s">&quot;Use Jekyll&quot;</span>
+</pre></div>
+
+</code></pre>
+<p>Thanks for reading, and feel free to reach out if you want to chat about cool tech stuff.</p>
+<h2 id="bonus-what-a-generator-shouldn-t-do">Bonus: What a Generator Shouldn&#39;t Do</h2>
+<p>I know some people might be reading this thinking, but a static generator also does <em>blank</em>. You
+are correct. Some static generators do other things as well, but most of these other things can
+and should be done with other tools. Here are some examples:</p>
+<h3 id="serve-and-live-reload-the-build-directory">Serve and Live-Reload the Build Directory</h3>
+<p>I wrote mine using a simple <a href="https://github.com/paulmillr/chokidar">file-watching library</a> combined
+with a simple <a href="https://github.com/expressjs/serve-static">static web server</a>, but you Grunt for
+this (<a href="http://rhumaric.com/2013/05/reloading-magic-with-grunt-and-livereload/">tutorial</a>) as well.</p>
+<h3 id="deploying-build-directory">Deploying Build Directory</h3>
+<p>If you&#39;re using <a href="https://pages.github.com/">Github Pages</a> then you just use Git to deploy. If you
+are using <a href="http://aws.amazon.com/s3/">Amazon S3</a> or something similar, you can usually find
+<a href="https://www.npmjs.org/package/s3">a module</a> that will let you write a deploy script in a couple
+lines of code.</p>
+<h3 id="draft-publish-workflows">Draft/Publish Workflows</h3>
+<p>This is what Git is for. Just create a new branch. Boom! Draft support.</p>
+ ]]></description>
+    <link>http://schier.co/blog/2014/12/02/the-perfect-static-website-generator-is-the-one-you-write-yourself.html</link>
+    <guid isPermaLink="true">http://schier.co/blog/2014/12/02/the-perfect-static-website-generator-is-the-one-you-write-yourself.html</guid>
+    <dc:creator><![CDATA[  ]]></dc:creator>
+    <pubDate>Tuesday, 02 Dec 2014 08:00:00 PST</pubDate>
+</item>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    </channel>
+</rss>
