@@ -43,14 +43,23 @@ func createPaths (parsed_url *url.URL) *os.File{
 
 //Converts relative links to absolute links
 
-func fixUrl(href string, baseUrl *url.URL) (string, string) {
+func fixUrl(href string, baseUrl *url.URL) int {
     link, err := url.Parse(href)
     if err!= nil{
         fmt.Println("Parsing relative link Error: ", err)
-        return "", "" //ignoring invalid urls
+        return 0//ignoring invalid urls
     }
     uri := baseUrl.ResolveReference(link)
-    return uri.String(), uri.Host
+    if uri.Host == start_url.Host {
+        absolute_link := uri.String()
+        absolute_link = strings.TrimSuffix(absolute_link, "/")
+        _, ok := visited[absolute_link]
+        if !ok {
+            visited[absolute_link] = false
+            return 1
+         }
+    }
+    return 0
 }
 
 func generateLinks(resp_reader io.Reader,  uri *url.URL) {
@@ -68,18 +77,8 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
               if t.Data == "a"{
                   for _, a := range t.Attr{
                       if a.Key == "href" && !strings.Contains(a.Val, "#"){
-                          link, link_host := fixUrl(a.Val, uri)
-                          if link != "" {
-                            if link_host == start_url.Host{
-                              link = strings.TrimSuffix(link, "/")
-                              _, ok := visited[link]
-                              if !ok {
-                                countLinks++
-                                visited[link] = false
-                              }
-                            }
-                          }
-                      }
+                          countLinks += fixUrl(a.Val, uri)
+                     }
                   }
               }
         }
