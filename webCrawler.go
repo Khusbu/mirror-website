@@ -74,7 +74,7 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
           case tt==html.StartTagToken:
               t := z.Token()
 
-              if t.Data == "a"{
+              if t.Data == "a" || t.Data == "link" {
                   for _, a := range t.Attr{
                       if a.Key == "href" && !strings.Contains(a.Val, "#"){
                           countLinks += fixUrl(a.Val, uri)
