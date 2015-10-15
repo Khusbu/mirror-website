@@ -7,9 +7,11 @@ import (
     "net/http"
     "net/url"
     "io"
+    "io/ioutil"
     "golang.org/x/net/html"
     "strings"
     "path/filepath"
+    "log"
 )
 
 var start_url *url.URL
@@ -119,10 +121,42 @@ func retrieve(uri string, syncChan chan int){
     generateLinks(resp_reader, parsed_url)
 }
 
+func walkFn(path string, info os.FileInfo, err error) error {
+    if !info.IsDir() {
+        input, err := ioutil.ReadFile(path)
+        if err != nil{
+            log.Fatalln(err)
+            return err
+        }
+        actual_path, _ := os.Getwd()
+        if err != nil{
+            log.Fatalln(err)
+            return err
+        }
+        output := strings.Replace(string(input), "http://"+ start_url.Host, actual_path +"/"+ start_url.Host, -1)
+        err = ioutil.WriteFile(path, []byte(output), 0644)
+        if err != nil{
+            log.Fatalln(err)
+            return err
+        }
+    }
+    return nil
+}
+
+
+func postProcessing(){
+   actual_path, err := os.Getwd()
+   err = filepath.Walk(actual_path +"/"+ start_url.Host, walkFn)
+   if err != nil{
+       log.Fatalln(err)
+       return
+   } 
+   fmt.Println("Done!!!")
+}
+
 func main(){
     flag.Parse()
     args := flag.Args()
-
     if(len(args)<1){
         fmt.Println("Specify a start page")
         os.Exit(1)
@@ -133,6 +167,7 @@ func main(){
          fmt.Println("Parsing Start Url Error: ",err)
          os.Exit(1)
      }
+     fmt.Println(start_url.Host)
      if !strings.HasSuffix(args[0], "/"){
         args[0] = args[0] + "/"
      }
@@ -155,4 +190,6 @@ func main(){
             break;
         }
      }
+
+    postProcessing() 
 }
