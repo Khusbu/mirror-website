@@ -10,21 +10,18 @@ import (
     "golang.org/x/net/html"
     "strings"
     "path/filepath"
-    //"time"
 )
 
 var start_url *url.URL
 var visited = make(map[string]bool)
 var goCount = 0
 
-func createPaths (parsed_url *url.URL) *os.File{
+
+func createPaths(parsed_url *url.URL) *os.File{
   var dir,file string
-  i := strings.LastIndex(parsed_url.Path, "/")
-  if(i >=0 && strings.Index(parsed_url.Path[i:], ".") >= 0){
-   dir, file = filepath.Split(parsed_url.Path)
-  } else {
-   dir  = parsed_url.Path + "/"
-   file = "index.html"
+  dir, file = filepath.Split(parsed_url.Path)
+  if file == "" {
+      file = "index.html"
   }
   if(len(dir)>0){
     err := os.MkdirAll(parsed_url.Host + dir, 0777)
@@ -41,6 +38,7 @@ func createPaths (parsed_url *url.URL) *os.File{
   return fileWriter
 }
 
+
 //Converts relative links to absolute links
 
 func fixUrl(href string, baseUrl *url.URL) int {
@@ -52,7 +50,6 @@ func fixUrl(href string, baseUrl *url.URL) int {
     uri := baseUrl.ResolveReference(link)
     if uri.Host == start_url.Host {
         absolute_link := uri.String()
-        absolute_link = strings.TrimSuffix(absolute_link, "/")
         _, ok := visited[absolute_link]
         if !ok {
             visited[absolute_link] = false
@@ -66,19 +63,27 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
   z := html.NewTokenizer(resp_reader)
   countLinks := 0
   for{
-      tt := z.Next();
+      tt := z.Next()
       switch{
           case tt==html.ErrorToken:
               fmt.Println("Number of links: ", countLinks)
               return
           case tt==html.StartTagToken:
               t := z.Token()
-
               if t.Data == "a" || t.Data == "link" {
                   for _, a := range t.Attr{
                       if a.Key == "href" && !strings.Contains(a.Val, "#"){
                           countLinks += fixUrl(a.Val, uri)
                      }
+                  }
+              }
+          case tt==html.SelfClosingTagToken: 
+              t := z.Token()
+              if t.Data == "img" {
+                  for _, a := range t.Attr{
+                      if a.Key =="src"{
+                          countLinks += fixUrl(a.Val, uri)
+                      }
                   }
               }
         }
@@ -128,7 +133,9 @@ func main(){
          fmt.Println("Parsing Start Url Error: ",err)
          os.Exit(1)
      }
-     args[0] = strings.TrimSuffix(args[0], "/")
+     if !strings.HasSuffix(args[0], "/"){
+        args[0] = args[0] + "/"
+     }
      syncChan:= make(chan int, 10)
      visited[args[0]] = false
      for {

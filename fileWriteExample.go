@@ -15,7 +15,7 @@ func walkFn(path string, info os.FileInfo, err error) error {
       lines := strings.Split(string(input), "\n")
 
       for i, line := range lines {
-              if strings.Contains(line, "LOL") {
+              if strings.Contains(line, "href") {
                       lines[i] = "absolute"
               }
       }
