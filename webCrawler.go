@@ -17,7 +17,7 @@ import (
 var start_url *url.URL
 var visited = make(map[string]bool)
 var goCount = 0
-
+var file_paths = make(map[string]string)
 
 func createPaths(parsed_url *url.URL) *os.File{
   var dir,file string
@@ -44,7 +44,7 @@ func createPaths(parsed_url *url.URL) *os.File{
 //Converts relative links to absolute links
 
 func fixUrl(href string, baseUrl *url.URL) int {
-    link, err := url.Parse(href)
+   link, err := url.Parse(href)
     if err!= nil{
         fmt.Println("Parsing relative link Error: ", err)
         return 0//ignoring invalid urls
@@ -55,6 +55,9 @@ func fixUrl(href string, baseUrl *url.URL) int {
         _, ok := visited[absolute_link]
         if !ok {
             visited[absolute_link] = false
+            if strings.HasSuffix(href,"/") {
+                file_paths[href] = href + "index.html"
+            }
             return 1
          }
     }
@@ -128,12 +131,16 @@ func walkFn(path string, info os.FileInfo, err error) error {
             log.Fatalln(err)
             return err
         }
-        actual_path, _ := os.Getwd()
+        actual_path, err := os.Getwd()
         if err != nil{
-            log.Fatalln(err)
+            fmt.Println("Error in Getwd: ",err)
             return err
         }
-        output := strings.Replace(string(input), "http://"+ start_url.Host, actual_path +"/"+ start_url.Host, -1)
+        output := string(input)
+        for link, file := range file_paths{
+            output = strings.Replace(output, link, file, -1)
+        }
+        output = strings.Replace(output, "http://"+ start_url.Host, actual_path + "/" + start_url.Host, -1)
         err = ioutil.WriteFile(path, []byte(output), 0644)
         if err != nil{
             log.Fatalln(err)
@@ -146,6 +153,10 @@ func walkFn(path string, info os.FileInfo, err error) error {
 
 func postProcessing(){
    actual_path, err := os.Getwd()
+   if err != nil{
+       fmt.Println("Error in Getwd: ",err)
+       return
+   }
    err = filepath.Walk(actual_path +"/"+ start_url.Host, walkFn)
    if err != nil{
        log.Fatalln(err)
@@ -167,7 +178,6 @@ func main(){
          fmt.Println("Parsing Start Url Error: ",err)
          os.Exit(1)
      }
-     fmt.Println(start_url.Host)
      if !strings.HasSuffix(args[0], "/"){
         args[0] = args[0] + "/"
      }
@@ -190,6 +200,5 @@ func main(){
             break;
         }
      }
-
     postProcessing() 
 }
