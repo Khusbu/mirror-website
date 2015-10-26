@@ -18,8 +18,9 @@ var start_url *url.URL
 var visited = make(map[string]bool)
 var goCount = 0
 var file_paths = make(map[string]string)
+var relative = make(map[string]string)
 
-func createPaths(parsed_url *url.URL) *os.File{
+func createPaths(parsed_url *url.URL) (*os.File, string){
   var dir,file string
   dir, file = filepath.Split(parsed_url.Path)
   if file == "" {
@@ -32,12 +33,16 @@ func createPaths(parsed_url *url.URL) *os.File{
         os.Exit(1)
     }
   }
-  fileWriter, err := os.Create(parsed_url.Host + dir + file)
+  if !strings.HasSuffix(dir, "/"){
+      dir = dir + "/"
+  }
+  file_path := parsed_url.Host + dir + file
+  fileWriter, err := os.Create(file_path)
   if(err != nil){
       fmt.Println("File Open Error: ",err)
       os.Exit(1)
   }
-  return fileWriter
+  return fileWriter, file_path
 }
 
 
@@ -58,6 +63,9 @@ func fixUrl(href string, baseUrl *url.URL) int {
             if strings.HasSuffix(href,"/") {
                 file_paths[href] = href + "index.html"
             }
+            if link.IsAbs(){
+                relative[href] = absolute_link
+            }
             return 1
          }
     }
@@ -71,7 +79,7 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
       tt := z.Next()
       switch{
           case tt==html.ErrorToken:
-              fmt.Println("Number of links: ", countLinks)
+              //fmt.Println("Number of links: ", countLinks)
               return
           case tt==html.StartTagToken:
               t := z.Token()
@@ -108,7 +116,7 @@ func retrieve(uri string, syncChan chan int){
         fmt.Println("Parsing link Error: ", err)
         os.Exit(1)
     }
-    fmt.Println("Fetching:  ", uri)
+   // fmt.Println("Fetching:  ", uri)
     resp, err := http.Get(uri)
 
     if(err != nil){
@@ -117,7 +125,8 @@ func retrieve(uri string, syncChan chan int){
     }
     defer resp.Body.Close()
 
-    fileWriter := createPaths(parsed_url)
+    fileWriter, file_path := createPaths(parsed_url)    
+    file_paths[uri] = file_path
     resp_reader := io.TeeReader(resp.Body, fileWriter)
     defer fileWriter.Close()
 
@@ -131,16 +140,15 @@ func walkFn(path string, info os.FileInfo, err error) error {
             log.Fatalln(err)
             return err
         }
-        actual_path, err := os.Getwd()
-        if err != nil{
-            fmt.Println("Error in Getwd: ",err)
-            return err
-        }
         output := string(input)
-        for link, file := range file_paths{
-            output = strings.Replace(output, link, file, -1)
+        for rel, abs := range relative{
+            dir, _ := filepath.Split(path)
+            rel_url, err := filepath.Rel(dir, file_paths[abs])
+            if err != nil{
+                log.Fatalln(err)
+            }
+            output = strings.Replace(output, "\""+rel+"\"", "\""+rel_url+"\"", -1)
         }
-        output = strings.Replace(output, "http://"+ start_url.Host, actual_path + "/" + start_url.Host, -1)
         err = ioutil.WriteFile(path, []byte(output), 0644)
         if err != nil{
             log.Fatalln(err)
@@ -152,12 +160,7 @@ func walkFn(path string, info os.FileInfo, err error) error {
 
 
 func postProcessing(){
-   actual_path, err := os.Getwd()
-   if err != nil{
-       fmt.Println("Error in Getwd: ",err)
-       return
-   }
-   err = filepath.Walk(actual_path +"/"+ start_url.Host, walkFn)
+  err := filepath.Walk(start_url.Host, walkFn)
    if err != nil{
        log.Fatalln(err)
        return
@@ -168,7 +171,7 @@ func postProcessing(){
 func main(){
     flag.Parse()
     args := flag.Args()
-    if(len(args)<1){
+    if len(args)<1 {
         fmt.Println("Specify a start page")
         os.Exit(1)
      }
@@ -200,5 +203,5 @@ func main(){
             break;
         }
      }
-    postProcessing() 
+   postProcessing() 
 }
