@@ -12,27 +12,47 @@ import (
     "strings"
     "path/filepath"
     "log"
+    //"time"
 )
 
 var start_url *url.URL
 var visited = make(map[string]bool)
-var goCount = 0
+var thread_count = 0
 var file_paths = make(map[string]string)
 var relative = make(map[string]string)
+var queue = make([]string, 1)
+var push_mutex = make(chan int, 1)
+var pop_mutex = make(chan int, 1)
+var thread_count_mutex = make(chan int, 1)
+
+// func isFileExists (string path) {
+//   if finfo, err := os.Stat(dir); err == nil {
+//     if !finfo.IsDir() {
+//       return true;
+//     }
+//   }
+//   return false;
+// }
 
 func createPaths(parsed_url *url.URL) (*os.File, string){
   var dir,file string
-  dir, file = filepath.Split(parsed_url.Path)
+  if parsed_url.RawQuery != ""{
+    dir, file = filepath.Split(parsed_url.Path+"?"+parsed_url.RawQuery)
+  } else {
+    dir, file = filepath.Split(parsed_url.Path)
+  }
   if file == "" {
       file = "index.html"
+  } else if filepath.Ext(file) == ""{
+    file += ".html"
   }
-  if(len(dir)>0){
+  //if(len(dir)>0) {
     err := os.MkdirAll(parsed_url.Host + dir, 0777)
     if(err != nil){
-        fmt.Println("Directory Create Error: ",dir, err)
-        os.Exit(1)
+          fmt.Println("Directory Create Error: ",dir, err)
+          os.Exit(1)
     }
-  }
+  //}
   if !strings.HasSuffix(dir, "/"){
       dir = dir + "/"
   }
@@ -48,18 +68,18 @@ func createPaths(parsed_url *url.URL) (*os.File, string){
 
 //Converts relative links to absolute links
 
-func fixUrl(href string, baseUrl *url.URL) int {
+func fixUrl(href string, baseUrl *url.URL, data string) int {
    link, err := url.Parse(href)
     if err!= nil{
         fmt.Println("Parsing relative link Error: ", err)
         return 0//ignoring invalid urls
     }
     uri := baseUrl.ResolveReference(link)
-    if uri.Host == start_url.Host {
+    if data == "img" || data == "link" || uri.Host == start_url.Host {
         absolute_link := uri.String()
         _, ok := visited[absolute_link]
         if !ok {
-            visited[absolute_link] = false
+            push(absolute_link)
             if strings.HasSuffix(href,"/") {
                 file_paths[href] = href + "index.html"
             }
@@ -86,16 +106,16 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
               if t.Data == "a" || t.Data == "link" {
                   for _, a := range t.Attr{
                       if a.Key == "href" && !strings.Contains(a.Val, "#"){
-                          countLinks += fixUrl(a.Val, uri)
+                          countLinks += fixUrl(a.Val, uri, t.Data)
                      }
                   }
               }
-          case tt==html.SelfClosingTagToken: 
+          case tt==html.SelfClosingTagToken:
               t := z.Token()
               if t.Data == "img" {
                   for _, a := range t.Attr{
-                      if a.Key =="src"{
-                          countLinks += fixUrl(a.Val, uri)
+                      if a.Key =="src" || t.Data == "link" {
+                          countLinks += fixUrl(a.Val, uri, t.Data)
                       }
                   }
               }
@@ -105,7 +125,7 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
 
 func retrieveDone(syncChan chan int) {
     <-syncChan
-    goCount--
+    change_thread_count("done")
 }
 
 func retrieve(uri string, syncChan chan int){
@@ -114,9 +134,9 @@ func retrieve(uri string, syncChan chan int){
     parsed_url, err := url.Parse(uri)
     if err!= nil{
         fmt.Println("Parsing link Error: ", err)
-        os.Exit(1)
+        return
     }
-   // fmt.Println("Fetching:  ", uri)
+    fmt.Println("Fetching:  ", uri)
     resp, err := http.Get(uri)
 
     if(err != nil){
@@ -125,7 +145,7 @@ func retrieve(uri string, syncChan chan int){
     }
     defer resp.Body.Close()
 
-    fileWriter, file_path := createPaths(parsed_url)    
+    fileWriter, file_path := createPaths(parsed_url)
     file_paths[uri] = file_path
     resp_reader := io.TeeReader(resp.Body, fileWriter)
     defer fileWriter.Close()
@@ -141,13 +161,14 @@ func walkFn(path string, info os.FileInfo, err error) error {
             return err
         }
         output := string(input)
+        dir, _ := filepath.Split(path)
         for rel, abs := range relative{
-            dir, _ := filepath.Split(path)
             rel_url, err := filepath.Rel(dir, file_paths[abs])
             if err != nil{
                 log.Fatalln(err)
             }
             output = strings.Replace(output, "\""+rel+"\"", "\""+rel_url+"\"", -1)
+            output = strings.Replace(output, "'"+rel+"'", "'"+rel_url+"'", -1)
         }
         err = ioutil.WriteFile(path, []byte(output), 0644)
         if err != nil{
@@ -164,10 +185,45 @@ func postProcessing(){
    if err != nil{
        log.Fatalln(err)
        return
-   } 
+   }
    fmt.Println("Done!!!")
 }
 
+func fix_start_url(link string) {
+    var err error
+    start_url, err = url.Parse(link)
+    if err!= nil{
+        fmt.Println("Parsing Start Url Error: ",err)
+        os.Exit(1)
+    }
+    if start_url.Scheme == "" {
+        start_url.Scheme = "http"
+    }
+}
+
+func pop() string {
+    pop_mutex <- 1
+    url := queue[0]
+    queue = queue[1:]
+    <- pop_mutex
+    return url
+}
+
+func push(url string) {
+    push_mutex <- 1
+    queue = append(queue, url)
+    <-push_mutex 
+}
+
+func change_thread_count(condition string){ 
+         thread_count_mutex <- 1
+         if condition == "done" {
+            thread_count--;
+         } else if condition == "start" {
+             thread_count++; 
+         }
+         <-thread_count_mutex 
+}
 func main(){
     flag.Parse()
     args := flag.Args()
@@ -175,33 +231,24 @@ func main(){
         fmt.Println("Specify a start page")
         os.Exit(1)
      }
-     var err error
-     start_url, err = url.Parse(args[0])
-     if err!= nil{
-         fmt.Println("Parsing Start Url Error: ",err)
-         os.Exit(1)
-     }
-     if !strings.HasSuffix(args[0], "/"){
-        args[0] = args[0] + "/"
-     }
-     syncChan:= make(chan int, 10)
-     visited[args[0]] = false
+     fix_start_url(args[0])
+
+     syncChan := make(chan int, 10)
+     push(start_url.String())
+
      for {
-        allVisited := true
-        for uri, done := range visited {
-            if done == true {
-                continue
-            }
-            syncChan <- 1
-            visited[uri] = true
-            goCount++
-            go retrieve(uri, syncChan)
-            allVisited = false
+         if len(queue) > 0 {
+           current_url := pop()
+           if visited[current_url] == false {
+              visited[current_url] = true
+              syncChan <- 1
+              change_thread_count("start")
+              go retrieve(current_url, syncChan) 
+           }
+         }
+         if thread_count == 0 {
             break
-        }
-        if allVisited == true && goCount == 0 {
-            break;
-        }
+         }
      }
-   postProcessing() 
+   //postProcessing()
 }
