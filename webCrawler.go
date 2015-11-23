@@ -88,12 +88,12 @@ func fixUrl(href string, baseUrl *url.URL, data string) int {
         absolute_link := uri.String()
         if !read_visited(absolute_link) {
             push(absolute_link)
-            if strings.HasSuffix(href,"/") {
+        /*    if strings.HasSuffix(href,"/") {
                 file_paths[href] = href + "index.html"
             }
             if link.IsAbs(){
                 relative[href] = absolute_link
-            }
+            }*/
             return 1
          }
     }
@@ -138,11 +138,11 @@ func retrieveDone(syncChan chan int) {
 func retrieve(uri string, syncChan chan int){
     defer retrieveDone(syncChan)
 
-    parsed_url, err := url.Parse(uri)
+   /* parsed_url, err := url.Parse(uri)
     if err!= nil{
         fmt.Println("Parsing link Error: ", err)
         return
-    }
+    }*/
     fmt.Println("Fetching:  ", uri)
     resp, err := http.Get(uri)
 
@@ -151,13 +151,15 @@ func retrieve(uri string, syncChan chan int){
         return
     }
     defer resp.Body.Close()
-
-    fileWriter, file_path := createPaths(parsed_url)
-    file_paths[uri] = file_path
+    if uri != resp.Request.URL.String() {
+        write_visited(resp.Request.URL.String())
+    }
+    fileWriter, _ := createPaths(resp.Request.URL)
+   // file_paths[uri] = file_path
     resp_reader := io.TeeReader(resp.Body, fileWriter)
     defer fileWriter.Close()
 
-    generateLinks(resp_reader, parsed_url)
+    generateLinks(resp_reader, resp.Request.URL)
 }
 
 func walkFn(path string, info os.FileInfo, err error) error {
@@ -259,8 +261,8 @@ func main(){
          if len(queue) > 0 {
            current_url := pop()
            if !read_visited(current_url) {
-              write_visited(current_url)
               change_thread_count("start",syncChan)
+              write_visited(current_url)
               go retrieve(current_url, syncChan) 
            }
          }
