@@ -12,18 +12,27 @@ import (
     "strings"
     "path/filepath"
     "log"
+    "sync"
     //"time"
 )
 
+const MAX_GO_ROUTINE = 100
 var start_url *url.URL
-var visited = make(map[string]bool)
-var thread_count = 0
+var (
+    visited = make(map[string]bool)
+    visited_mutex sync.Mutex
+)
+var (
+    thread_count = 0
+    thread_count_mutex sync.Mutex
+)
+var (
+    queue = make([]string, 0)
+    push_mutex sync.Mutex
+    pop_mutex sync.Mutex
+)
 var file_paths = make(map[string]string)
 var relative = make(map[string]string)
-var queue = make([]string, 1)
-var push_mutex = make(chan int, 1)
-var pop_mutex = make(chan int, 1)
-var thread_count_mutex = make(chan int, 1)
 
 // func isFileExists (string path) {
 //   if finfo, err := os.Stat(dir); err == nil {
@@ -77,8 +86,7 @@ func fixUrl(href string, baseUrl *url.URL, data string) int {
     uri := baseUrl.ResolveReference(link)
     if data == "img" || data == "link" || uri.Host == start_url.Host {
         absolute_link := uri.String()
-        _, ok := visited[absolute_link]
-        if !ok {
+        if !read_visited(absolute_link) {
             push(absolute_link)
             if strings.HasSuffix(href,"/") {
                 file_paths[href] = href + "index.html"
@@ -112,9 +120,9 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
               }
           case tt==html.SelfClosingTagToken:
               t := z.Token()
-              if t.Data == "img" {
+              if t.Data == "img" || t.Data == "link" {
                   for _, a := range t.Attr{
-                      if a.Key =="src" || t.Data == "link" {
+                      if a.Key =="src" || a.Key == "href" {
                           countLinks += fixUrl(a.Val, uri, t.Data)
                       }
                   }
@@ -124,8 +132,7 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
 }
 
 func retrieveDone(syncChan chan int) {
-    <-syncChan
-    change_thread_count("done")
+    change_thread_count("done", syncChan)
 }
 
 func retrieve(uri string, syncChan chan int){
@@ -188,7 +195,16 @@ func postProcessing(){
    }
    fmt.Println("Done!!!")
 }
-
+func read_visited(value string)bool {
+    visited_mutex.Lock()
+    defer visited_mutex.Unlock()
+    return visited[value]
+}
+func write_visited(value string) { 
+    visited_mutex.Lock()
+    defer visited_mutex.Unlock()
+    visited[value] = true
+}
 func fix_start_url(link string) {
     var err error
     start_url, err = url.Parse(link)
@@ -202,27 +218,29 @@ func fix_start_url(link string) {
 }
 
 func pop() string {
-    pop_mutex <- 1
+    pop_mutex.Lock()
+    defer pop_mutex.Unlock()
     url := queue[0]
     queue = queue[1:]
-    <- pop_mutex
     return url
 }
 
 func push(url string) {
-    push_mutex <- 1
+    push_mutex.Lock()
+    defer push_mutex.Unlock()
     queue = append(queue, url)
-    <-push_mutex 
 }
 
-func change_thread_count(condition string){ 
-         thread_count_mutex <- 1
+func change_thread_count(condition string, syncChan chan int){ 
+//         thread_count_mutex.Lock()
+//         defer thread_count_mutex.Unlock()
          if condition == "done" {
+            <-syncChan
             thread_count--;
          } else if condition == "start" {
+             syncChan <- 1
              thread_count++; 
          }
-         <-thread_count_mutex 
 }
 func main(){
     flag.Parse()
@@ -232,17 +250,17 @@ func main(){
         os.Exit(1)
      }
      fix_start_url(args[0])
-
-     syncChan := make(chan int, 10)
+     syncChan := make(chan int, MAX_GO_ROUTINE)
      push(start_url.String())
 
      for {
+         fmt.Println("Queue: ",len(queue))
+         fmt.Println("Count: ",thread_count)
          if len(queue) > 0 {
            current_url := pop()
-           if visited[current_url] == false {
-              visited[current_url] = true
-              syncChan <- 1
-              change_thread_count("start")
+           if !read_visited(current_url) {
+              write_visited(current_url)
+              change_thread_count("start",syncChan)
               go retrieve(current_url, syncChan) 
            }
          }
