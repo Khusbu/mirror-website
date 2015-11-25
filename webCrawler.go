@@ -40,15 +40,17 @@ func createPaths(parsed_url *url.URL) (*os.File, string){
     if parsed_url.RawQuery != ""{
         file += "?" + parsed_url.RawQuery
     } 
-    err := os.MkdirAll(parsed_url.Host + dir, 0777)
+    parsed_url_host := ""
+    if parsed_url.Host != start_url.Host {
+        parsed_url_host = parsed_url.Host
+    }
+    full_dir_path := start_url.Host +"/"+ parsed_url_host +"/"+ dir + "/"
+    err := os.MkdirAll(full_dir_path, 0777)
     if(err != nil){
-        fmt.Println("Directory Create Error: ",dir, err)
+        fmt.Println("Directory Create Error: ",full_dir_path, err)
         return nil, ""
     }
-    if !strings.HasSuffix(dir, "/"){
-        dir = dir + "/"
-    }
-    file_path := parsed_url.Host + dir + file
+    file_path := full_dir_path + file
     fileWriter, err := os.Create(file_path)
     if(err != nil){
         fmt.Println("File Open Error: ",err)
@@ -105,7 +107,7 @@ func generateLinks(resp_reader io.Reader,  uri *url.URL) {
     }
 }
 
-    //Retrieves a link
+//Retrieves a link
 
 func retrieve(uri string, syncChan chan int){
     fmt.Println("Fetching:  ", uri)
@@ -118,16 +120,19 @@ func retrieve(uri string, syncChan chan int){
     defer resp.Body.Close()
 
     actual_url := resp.Request.URL
-    if uri != actual_url.String() {
-        write_visited(actual_url.String())
-    }
-    fileWriter, file_path := createPaths(actual_url)
-    if fileWriter != nil && file_path != "" {
-        // file_paths[uri] = file_path
-        resp_reader := io.TeeReader(resp.Body, fileWriter)
-        defer fileWriter.Close()
+    fetched_url, _ := url.Parse(uri)
 
-        generateLinks(resp_reader, actual_url)
+    if fetched_url.Host == actual_url.Host && resp.StatusCode < 400 {
+        fileWriter, file_path := createPaths(actual_url)
+        if fileWriter != nil && file_path != "" {
+        // file_paths[uri] = file_path
+            resp_reader := io.TeeReader(resp.Body, fileWriter)
+            generateLinks(resp_reader, actual_url)
+            defer fileWriter.Close()
+        }
+        if uri != actual_url.String() {
+            write_visited(actual_url.String())
+        }
     }
     <-syncChan
 }
@@ -201,10 +206,10 @@ func pop() string {
     return url
 }
 
-func push(url string) {
+func push(href string) {
     push_mutex.Lock()
     defer push_mutex.Unlock()
-    queue = append(queue, url)
+    queue = append(queue, href)
 }
 
 func main() {
