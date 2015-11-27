@@ -33,7 +33,10 @@ var (
     relative = make(map[string]string) 
     relative_path_mutex sync.Mutex
 )
-
+var (
+    file_links = make(map[string][]string)
+    file_links_mutex sync.Mutex
+)
 //Create path for response file
 
 func createPaths(parsed_url *url.URL) (*os.File, string){
@@ -61,7 +64,8 @@ func createPaths(parsed_url *url.URL) (*os.File, string){
         fmt.Println("File Open Error: ",err)
         return nil, ""
     }
-    return fileWriter, file_path
+    full_path := filepath.Dir(file_path) + "/" +file
+    return fileWriter, full_path
 }
 
 //Stores a map of absolute link as key and fetched link as value
@@ -69,16 +73,16 @@ func createPaths(parsed_url *url.URL) (*os.File, string){
 func store_absolute_link(absolute_link string, href string) {
     relative_path_mutex.Lock()
     defer relative_path_mutex.Unlock()
-    relative[href] = absolute_link
+    relative[absolute_link] = href
 }
 
 //Converts relative links to absolute links
 
-func fixUrl(href string, baseUrl *url.URL, data string) int {
+func fixUrl(href string, baseUrl *url.URL, data string) string {
     link, err := url.Parse(href)
     if err!= nil{
         fmt.Println("Parsing relative link Error: ", err)
-        return 0//ignoring invalid urls
+        return ""//ignoring invalid urls
     }
     uri := baseUrl.ResolveReference(link)
     if data == "img" || uri.Host == start_url.Host {
@@ -86,27 +90,36 @@ func fixUrl(href string, baseUrl *url.URL, data string) int {
         if !read_visited(absolute_link) {
             push(absolute_link)
             store_absolute_link(absolute_link, href)
-            return 1
         }
+        return absolute_link
     }
-    return 0
+    return ""
+}
+
+func write_file_links(file_pathname string, fetched_links []string) {
+    file_links_mutex.Lock()
+    defer file_links_mutex.Unlock()
+    file_links[file_pathname] = fetched_links
 }
 //Fetch links from response
-func generateLinks(resp_reader io.Reader,  uri *url.URL) {
+func generateLinks(resp_reader io.Reader,  uri *url.URL, file_pathname string) {
     z := html.NewTokenizer(resp_reader)
-    countLinks := 0
+    fetched_links := make([]string,0)
     for{
         tt := z.Next()
         switch tt {
         case html.ErrorToken:
-            //fmt.Println("Number of links: ", countLinks)
+            write_file_links(file_pathname, fetched_links[0:])
             return
         case html.StartTagToken, html.SelfClosingTagToken:
             t := z.Token()
             if t.Data == "a" || t.Data == "link" || t.Data == "img" {
                 for _, a := range t.Attr{
                     if (a.Key == "href" || a.Key == "src") && !strings.Contains(a.Val, "#"){
-                        countLinks += fixUrl(a.Val, uri, t.Data)
+                        abs_link := fixUrl(a.Val, uri, t.Data)
+                        if abs_link != "" {
+                            fetched_links = append(fetched_links, abs_link)
+                        }
                      }
                 }
             }
@@ -144,7 +157,7 @@ func retrieve(uri string, syncChan chan int){
         if fileWriter != nil && file_path != "" {
             store_file_path(uri, file_path)
             resp_reader := io.TeeReader(resp.Body, fileWriter)
-            generateLinks(resp_reader, actual_url)
+            generateLinks(resp_reader, actual_url,file_path)
             defer fileWriter.Close()
         }
         if uri != actual_url.String() {
@@ -154,7 +167,6 @@ func retrieve(uri string, syncChan chan int){
 }
 
 func walkFn(path string, info os.FileInfo, err error) error {
-    fmt.Println("Processing: ",path)
     if !info.IsDir() {
         input, err := ioutil.ReadFile(path)
         if err != nil{
@@ -163,14 +175,14 @@ func walkFn(path string, info os.FileInfo, err error) error {
         }
         output := string(input)
         dir, _ := filepath.Split(path)
-        for uri, abs_link := range relative {
+        for _, abs_link := range file_links[path] { 
             rel_url, err := filepath.Rel(dir, file_paths[abs_link])
             if err != nil{
                 fmt.Println("Error creating relative path: ",err)
                 continue
             }
-            output = strings.Replace(output, "\""+uri+"\"", "\""+rel_url+"\"", -1)
-            output = strings.Replace(output, "'"+uri+"'", "'"+rel_url+"'", -1)
+            output = strings.Replace(output, "\""+relative[abs_link]+"\"", "\""+rel_url+"\"", -1)
+            output = strings.Replace(output, "'"+relative[abs_link]+"'", "'"+rel_url+"'", -1)
         }
         err = ioutil.WriteFile(path, []byte(output), 0644)
         if err != nil{
@@ -183,6 +195,7 @@ func walkFn(path string, info os.FileInfo, err error) error {
 
 
 func postProcessing(){
+  fmt.Println("Post-processing...")
   err := filepath.Walk(start_url.Host, walkFn)
    if err != nil{
        fmt.Println("Walking error: ", err)
@@ -243,8 +256,8 @@ func main() {
      push(start_link)
      store_absolute_link(start_link, start_link)
      for {
-         fmt.Println("Queue: ",len(queue))
-         fmt.Println("Threads: ",len(syncChan))
+         fmt.Println("Number of URLs in Queue: ",len(queue))
+         fmt.Println("Number of Threads running: ",len(syncChan))
          if len(queue) > 0 {
            current_url := pop()
            if !read_visited(current_url) {
