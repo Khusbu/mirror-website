@@ -146,16 +146,22 @@ func retrieve(uri string, syncChan chan int){
 
     tlsConfig := &tls.Config{InsecureSkipVerify: true}
     transport := &http.Transport{TLSClientConfig: tlsConfig}
-    client := http.Client{Transport: transport}
+    client := &http.Client{Transport: transport}
 
-    resp, err := client.Get(uri)
+    req, err := http.NewRequest("GET",uri,nil)
+    if err != nil {
+        fmt.Println(err)
+    }
+    req.Header.Set("User-Agent", "Golang Mirror v. 1.0")
+
+    resp, err := client.Do(req)
 
     if(err != nil){
         fmt.Println("Http Transport Error: ", uri, "     ", err)
         return
     }
     defer resp.Body.Close()
-
+    
     actual_url := resp.Request.URL
     fetched_url, _ := url.Parse(uri)
 
