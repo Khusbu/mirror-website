@@ -2,6 +2,7 @@ package main
 
 import (
     "fmt"
+    "crypto/tls"
     "flag"
     "os"
     "net/http"
@@ -12,6 +13,7 @@ import (
     "strings"
     "path/filepath"
     "sync"
+    "time"
 )
 
 const MAX_GO_ROUTINE = 100
@@ -141,7 +143,12 @@ func retrieve(uri string, syncChan chan int){
         <-syncChan
     }() 
     fmt.Println("Fetching:  ", uri)
-    resp, err := http.Get(uri)
+
+    tlsConfig := &tls.Config{InsecureSkipVerify: true}
+    transport := &http.Transport{TLSClientConfig: tlsConfig}
+    client := http.Client{Transport: transport}
+
+    resp, err := client.Get(uri)
 
     if(err != nil){
         fmt.Println("Http Transport Error: ", uri, "     ", err)
@@ -256,8 +263,9 @@ func main() {
      push(start_link)
      store_absolute_link(start_link, start_link)
      for {
-         fmt.Println("Number of URLs in Queue: ",len(queue))
-         fmt.Println("Number of Threads running: ",len(syncChan))
+//         fmt.Println("Number of URLs in Queue: ",len(queue))
+//         fmt.Println("Number of Threads running: ",len(syncChan))
+         time.Sleep(10 * time.Millisecond)
          if len(queue) > 0 {
            current_url := pop()
            if !read_visited(current_url) {
