@@ -14,9 +14,11 @@ import (
     "path/filepath"
     "sync"
     "time"
+    "log"
 )
 
-const MAX_GO_ROUTINE = 100
+const MAX_GO_ROUTINE = 10
+const user_agent = "Golang Mirror v. 2.0"
 var start_url *url.URL
 var (
     visited = make(map[string]bool)
@@ -76,6 +78,7 @@ func store_absolute_link(absolute_link string, href string) {
     relative_path_mutex.Lock()
     defer relative_path_mutex.Unlock()
     relative[absolute_link] = href
+    return
 }
 
 //Converts relative links to absolute links
@@ -102,6 +105,7 @@ func write_file_links(file_pathname string, fetched_links []string) {
     file_links_mutex.Lock()
     defer file_links_mutex.Unlock()
     file_links[file_pathname] = fetched_links
+    return
 }
 //Fetch links from response
 func generateLinks(resp_reader io.Reader,  uri *url.URL, file_pathname string) {
@@ -134,6 +138,7 @@ func store_file_path(absolute_link string, file_path string) {
     file_path_mutex.Lock()
     defer file_path_mutex.Unlock()
     file_paths[absolute_link] = file_path
+    return
 }
 
 //Retrieves a link
@@ -151,8 +156,9 @@ func retrieve(uri string, syncChan chan int){
     req, err := http.NewRequest("GET",uri,nil)
     if err != nil {
         fmt.Println(err)
+        return
     }
-    req.Header.Set("User-Agent", "Golang Mirror v. 1.0")
+    req.Header.Set("User-Agent", user_agent)
 
     resp, err := client.Do(req)
 
@@ -160,27 +166,37 @@ func retrieve(uri string, syncChan chan int){
         fmt.Println("Http Transport Error: ", uri, "     ", err)
         return
     }
-    defer resp.Body.Close()
     
-    actual_url := resp.Request.URL
+    response_url := resp.Request.URL
     fetched_url, _ := url.Parse(uri)
+    should_write := true
 
-    if fetched_url.Host == actual_url.Host && resp.StatusCode < 400 {
-        fileWriter, file_path := createPaths(actual_url)
-        if fileWriter != nil && file_path != "" {
-            store_file_path(uri, file_path)
-            resp_reader := io.TeeReader(resp.Body, fileWriter)
-            generateLinks(resp_reader, actual_url,file_path)
-            defer fileWriter.Close()
-        }
-        if uri != actual_url.String() {
-            write_visited(actual_url.String())
-        }
+    if fetched_url.Host == response_url.Host && resp.StatusCode < 400 {
+	response_url_string := response_url.String()
+    	if  response_url_string != uri {
+	    	if !read_visited(response_url_string) {
+		    	write_visited(response_url_string)	
+		    } else {
+			    should_write = false
+		    }
+	    }
+   	    if should_write {
+		    fileWriter, file_path := createPaths(response_url)
+		    if fileWriter != nil && file_path != "" {
+		        store_file_path(uri, file_path)
+		        resp_reader := io.TeeReader(resp.Body, fileWriter)
+		        generateLinks(resp_reader, response_url,file_path)
+		        defer fileWriter.Close()
+		    }
+	    }
     }
+    resp.Body.Close()
+    return
 }
 
 func walkFn(path string, info os.FileInfo, err error) error {
     if !info.IsDir() {
+        fmt.Println("Converting ",path)
         input, err := ioutil.ReadFile(path)
         if err != nil{
             fmt.Println("File reading error: ",err)
@@ -215,6 +231,7 @@ func postProcessing(){
        return
    }
    fmt.Println("Done!!!")
+   return
 }
 
 func read_visited(value string)bool {
@@ -227,6 +244,7 @@ func write_visited(value string) {
     visited_mutex.Lock()
     defer visited_mutex.Unlock()
     visited[value] = true
+    return
 }
 
 func fix_start_url(link string) {
@@ -240,6 +258,7 @@ func fix_start_url(link string) {
         fmt.Println("Provide full url like http://www.example.com and try again!")
         os.Exit(1)
     }
+    return
 }
 
 func pop() string {
@@ -254,9 +273,11 @@ func push(href string) {
     push_mutex.Lock()
     defer push_mutex.Unlock()
     queue = append(queue, href)
+    return
 }
 
 func main() {
+    start := time.Now()
     flag.Parse()
     args := flag.Args()
     if len(args)<1 {
@@ -284,7 +305,12 @@ func main() {
             break
          }
      }
+     elapsed := time.Since(start)
+     log.Printf("Time taken for retrieval: %s",elapsed)
+     start = time.Now()
      if len(file_paths) > 0 {
         postProcessing()
      }
+     elapsed = time.Since(start)
+     log.Printf("Time taken for Post-processing: %s",elapsed)
 }
