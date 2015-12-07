@@ -1,5 +1,5 @@
 # mirror-website
-A web crawler which mirrors a website.
+A web crawler in Go which mirrors a website.
 
 # Dependencies:
 - Go Version- go1.5 linux/amd64
